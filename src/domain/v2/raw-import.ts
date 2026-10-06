@@ -3,8 +3,8 @@ import { validateDate, validateInstant } from '../validation.js';
 import { DomainError } from '../errors.js';
 import { defaultR1Definitions } from './definitions.js';
 import { appendProgressEvent, createProgressRecord } from './progress.js';
-import type { ApplicationV2, DataSnapshotV2 } from './snapshot.js';
-import type { ProgressEvent, ProgressRecord, R1DefinitionsSnapshot } from './types.js';
+import { syncApplicationWithProgress, validateV2Snapshot, type ApplicationV2, type DataSnapshotV2 } from './snapshot.js';
+import type { ProgressEvent, ProgressRecord, R1DefinitionsSnapshot, StatusSemantic } from './types.js';
 import { validateExternalUrl } from '../../platform/validation.js';
 
 type RawStatusMapping = {
@@ -24,6 +24,12 @@ export const RAW_STATUS_MAPPINGS: Readonly<Record<string, RawStatusMapping>> = {
   '笔试': { statusId: 'written_test_active', phase: 'in_progress' },
   '测评中': { statusId: 'assessment_active', phase: 'in_progress' },
   '一面': { statusId: 'interview_1_active', phase: 'in_progress' },
+  '二面': { statusId: 'interview_2_active', phase: 'in_progress' },
+  '三面': { statusId: 'interview_3_active', phase: 'in_progress' },
+  '四面': { statusId: 'interview_4_active', phase: 'in_progress' },
+  '五面': { statusId: 'interview_extra_active', phase: 'in_progress' },
+  'Offer': { statusId: 'offer_received', phase: 'unknown' },
+  '泡池': { statusId: 'pool', phase: 'unknown' },
   '挂掉': { statusId: 'failed_unknown', phase: 'unknown', failedAt: 'unknown' },
 };
 
@@ -175,6 +181,8 @@ function makeImportedRow(
   index: number,
   options: RawImportOptions,
   definitions: R1DefinitionsSnapshot,
+  /** A re-used source row can carry a status time from before its new apply date. */
+  clampStatusDate = false,
 ): ImportedApplicationV2 {
   const mapping = RAW_STATUS_MAPPINGS[source.sourceStatus]!;
   const channel = options.channels.find(item => item.name.trim().toLocaleLowerCase() === source.channelName.toLocaleLowerCase());
@@ -241,8 +249,11 @@ function makeImportedRow(
     append('submitted', source.applyDate, source.createdAt, 'submitted');
     application.appliedOn = source.applyDate;
     if (mapping.statusId !== 'submitted') {
-      const statusDate = businessDateFromInstant(source.statusUpdatedAt);
-      if (statusDate < source.applyDate) throw new Error('statusUpdatedAt 早于 applyDate，无法生成可信的状态顺序');
+      let statusDate = businessDateFromInstant(source.statusUpdatedAt);
+      if (statusDate < source.applyDate) {
+        if (!clampStatusDate) throw new Error('statusUpdatedAt 早于 applyDate，无法生成可信的状态顺序');
+        statusDate = source.applyDate;
+      }
       append(mapping.statusId, statusDate, source.statusUpdatedAt, 'current', mapping.failedAt);
     }
   }
@@ -260,15 +271,21 @@ function makeImportedRow(
 }
 
 /** Parse legacy JSON and produce validated v2 applications plus their initial event chains. */
-export function parseRawApplicationsImport(input: unknown, options: RawImportOptions): RawImportResult {
+/** Accepts JSON text, a record array, or an object wrapping `applications`. */
+function sourceRows(input: unknown): unknown[] | RawImportIssue {
   let value = input;
   if (typeof input === 'string') {
     try { value = JSON.parse(input) as unknown; }
-    catch (error) { return { totalCount: 0, applications: [], issues: [{ index: -1, sourceId: null, field: '$', message: error instanceof Error ? `JSON 格式无效：${error.message}` : 'JSON 格式无效' }] }; }
+    catch (error) { return { index: -1, sourceId: null, field: '$', message: error instanceof Error ? `JSON 格式无效：${error.message}` : 'JSON 格式无效' }; }
   }
   const root = recordFrom(value);
   const rows = Array.isArray(value) ? value : root && Array.isArray(root.applications) ? root.applications : null;
-  if (!rows) return { totalCount: 0, applications: [], issues: [{ index: -1, sourceId: null, field: '$', message: '文件必须是记录数组或包含 applications 数组的对象' }] };
+  return rows ?? { index: -1, sourceId: null, field: '$', message: '文件必须是记录数组或包含 applications 数组的对象' };
+}
+
+export function parseRawApplicationsImport(input: unknown, options: RawImportOptions): RawImportResult {
+  const rows = sourceRows(input);
+  if (!Array.isArray(rows)) return { totalCount: 0, applications: [], issues: [rows] };
   if (!options.seasonId.trim()) return { totalCount: rows.length, applications: [], issues: [{ index: -1, sourceId: null, field: 'seasonId', message: '必须选择招聘季' }] };
   const definitions = options.definitions ?? defaultR1Definitions();
   const applications: ImportedApplicationV2[] = [];
@@ -303,4 +320,187 @@ export function requireCleanRawImport(result: RawImportResult): ImportedApplicat
     throw new DomainError('VALIDATION', `导入预览有 ${result.issues.length} 条错误，不能继续`);
   }
   return structuredClone(result.applications);
+}
+
+export interface RawImportSyncStatusUpdate {
+  applicationId: string;
+  sourceId: string;
+  company: string;
+  role: string;
+  fromStatusName: string;
+  sourceStatus: string;
+  occurredOn: string;
+  /** When the source changed status; it becomes the synced event's createdAt. */
+  changedAt: string;
+  /** Set when the application has no submission yet; recorded before the new status. */
+  submittedOn: string | null;
+  reopen: boolean;
+}
+
+export interface RawImportSyncSkip {
+  sourceId: string;
+  company: string;
+  role: string;
+  applicationId: string | null;
+  reason: string;
+}
+
+export interface RawImportSyncPlan {
+  seasonId: string;
+  totalCount: number;
+  unchangedCount: number;
+  additions: ImportedApplicationV2[];
+  statusUpdates: RawImportSyncStatusUpdate[];
+  skipped: RawImportSyncSkip[];
+  issues: RawImportIssue[];
+}
+
+export const RAW_IMPORT_SYNC_REOPEN_REASON = '同步原始 JSON 中的最新状态';
+const IMPORTED_ID_PREFIX = 'raw-import-';
+const reopenableSemantics = new Set<StatusSemantic>(['failed', 'offer_accepted', 'offer_declined', 'withdrawn']);
+
+/** Coarse position in the process; finer phases of one stage count as the same place. */
+function progressKey(semantic: StatusSemantic, stageId: string | null): string {
+  if (semantic === 'draft' || semantic === 'submitted' || semantic === 'failed' || semantic === 'withdrawn') return semantic;
+  if (semantic === 'offer_received' || semantic === 'offer_accepted' || semantic === 'offer_declined') return 'offer';
+  return stageId ?? semantic;
+}
+
+const sameText = (left: string, right: string) => left.trim().toLocaleLowerCase() === right.trim().toLocaleLowerCase();
+
+/**
+ * Compare a re-exported legacy JSON file with the current snapshot without changing it.
+ * Imported rows are matched by source id and position; a different position under a
+ * reused source id is a separate application. Status changes are appended only when the
+ * source changed after the application's latest recorded event; nothing is deleted.
+ */
+export function planRawImportSync(snapshot: DataSnapshotV2, input: unknown, options: { seasonId: string }): RawImportSyncPlan {
+  const plan: RawImportSyncPlan = { seasonId: options.seasonId, totalCount: 0, unchangedCount: 0, additions: [], statusUpdates: [], skipped: [], issues: [] };
+  const rows = sourceRows(input);
+  if (!Array.isArray(rows)) { plan.issues.push(rows); return plan; }
+  plan.totalCount = rows.length;
+  const season = snapshot.seasons.find(item => item.id === options.seasonId);
+  if (!season || season.archivedAt !== null) {
+    plan.issues.push({ index: -1, sourceId: null, field: 'seasonId', message: '必须选择一个未归档的招聘季' });
+    return plan;
+  }
+  const { definitions } = snapshot;
+  const records = new Map(snapshot.progressRecords.map(record => [record.applicationId, record]));
+  const takenIds = new Set(snapshot.applications.map(application => application.id));
+  const manualApplications = snapshot.applications.filter(application => application.seasonId === options.seasonId && !application.id.startsWith(IMPORTED_ID_PREFIX));
+  const seenSourceIds = new Set<string>();
+  const activeEvents = (applicationId: string) => {
+    const record = records.get(applicationId);
+    if (!record) throw new Error(`投递 ${applicationId} 缺少进度记录`);
+    return record.events.filter(event => event.invalidatedAt === null).sort((left, right) => left.sequence - right.sequence);
+  };
+
+  rows.forEach((rawRow, index) => {
+    let sourceId: string | null = recordFrom(rawRow) ? text((rawRow as Record<string, unknown>).id) || null : null;
+    try {
+      const source = parseRow(rawRow, index);
+      sourceId = source.sourceId;
+      if (seenSourceIds.has(sourceId)) throw new Error(`重复的源记录 id“${sourceId}”`);
+      seenSourceIds.add(sourceId);
+      const mapping = RAW_STATUS_MAPPINGS[source.sourceStatus]!;
+      const status = definitions.statuses.find(item => item.id === mapping.statusId);
+      if (!status || status.archivedAt !== null) throw new Error(`状态定义“${mapping.statusId}”不存在或已归档`);
+      const sourceKey = progressKey(status.semantic, status.stageId);
+
+      const baseId = `${IMPORTED_ID_PREFIX}${sourceId}`;
+      const candidates = snapshot.applications.filter(application => application.id === baseId || application.id.startsWith(`${baseId}--`));
+      const match = candidates.find(application => sameText(application.role, source.position));
+      if (!match) {
+        if (!candidates.length) {
+          const duplicate = manualApplications.find(application => {
+            if (!sameText(application.company, source.company) || application.appliedOn !== source.applyDate) return false;
+            const current = activeEvents(application.id).at(-1);
+            return sameText(application.role, source.position) || (current ? progressKey(current.semantics.semantic, current.semantics.stageId) : 'draft') === sourceKey;
+          });
+          if (duplicate) {
+            plan.skipped.push({ sourceId, company: source.company, role: source.position, applicationId: duplicate.id, reason: `与 App 中手动新建的「${duplicate.company} · ${duplicate.role}」重复（公司、投递日期和状态一致）` });
+            return;
+          }
+        }
+        let applicationId = baseId;
+        for (let suffix = 2; takenIds.has(applicationId); suffix += 1) applicationId = `${baseId}--${suffix}`;
+        takenIds.add(applicationId);
+        plan.additions.push(makeImportedRow(source, index, { seasonId: options.seasonId, channels: snapshot.channels, applicationId: () => applicationId }, definitions, candidates.length > 0));
+        return;
+      }
+
+      const events = activeEvents(match.id);
+      const last = events.at(-1) ?? null;
+      if ((last ? progressKey(last.semantics.semantic, last.semantics.stageId) : 'draft') === sourceKey) {
+        plan.unchangedCount += 1;
+        return;
+      }
+      const skip = (reason: string) => plan.skipped.push({ sourceId: source.sourceId, company: match.company, role: match.role, applicationId: match.id, reason });
+      const lastChange = events.reduce((latest, event) => event.createdAt > latest ? event.createdAt : latest, '');
+      if (source.statusUpdatedAt <= lastChange) return skip(`App 中的「${last?.statusNameSnapshot ?? '待投递'}」更新更晚，保留 App 的状态`);
+      const submitted = events.some(event => event.semantics.semantic === 'submitted');
+      if (status.semantic === 'draft' || (status.semantic === 'submitted' && submitted)) return skip(`源文件把状态改回了「${source.sourceStatus}」，App 已有更后的进度，未同步`);
+      // A missing submission is inserted first; it cannot be dated after existing history.
+      const firstDate = events[0]?.occurredOn;
+      const submittedOn = submitted ? null : firstDate && firstDate < source.applyDate! ? firstDate : source.applyDate!;
+      // Event dates must not run backwards behind the existing chain or the new submission.
+      const earliest = [businessDateFromInstant(source.statusUpdatedAt), last?.occurredOn ?? '', submittedOn ?? ''].sort().at(-1)!;
+      plan.statusUpdates.push({
+        applicationId: match.id,
+        sourceId: source.sourceId,
+        company: match.company,
+        role: match.role,
+        fromStatusName: last?.statusNameSnapshot ?? '待投递',
+        sourceStatus: source.sourceStatus,
+        occurredOn: earliest,
+        changedAt: source.statusUpdatedAt,
+        submittedOn,
+        reopen: !!last && reopenableSemantics.has(last.semantics.semantic) && !reopenableSemantics.has(status.semantic),
+      });
+    } catch (error) {
+      plan.issues.push({ index, sourceId, field: 'record', message: error instanceof Error ? error.message : '记录无效' });
+    }
+  });
+  return plan;
+}
+
+/** Applies a clean sync plan to a copy of the snapshot and validates the complete result. */
+export function applyRawImportSync(snapshot: DataSnapshotV2, plan: RawImportSyncPlan, context: { id: () => string }): DataSnapshotV2 {
+  if (plan.issues.length) throw new DomainError('VALIDATION', `同步预览有 ${plan.issues.length} 条错误，不能继续`);
+  const next = structuredClone(snapshot);
+  for (const update of plan.statusUpdates) {
+    const application = next.applications.find(item => item.id === update.applicationId);
+    const recordIndex = next.progressRecords.findIndex(record => record.applicationId === update.applicationId);
+    if (!application || recordIndex < 0) throw new DomainError('NOT_FOUND', `投递 ${update.applicationId} 已不存在，请重新预览`);
+    const mapping = RAW_STATUS_MAPPINGS[update.sourceStatus];
+    if (!mapping) throw new DomainError('VALIDATION', `不支持的状态“${update.sourceStatus}”`);
+    let record = next.progressRecords[recordIndex]!;
+    const appendSynced = (statusId: string, occurredOn: string, commandId: string, extra: Partial<Parameters<typeof appendProgressEvent>[2]>) => {
+      const result = appendProgressEvent(record, next.definitions, { commandId, statusId, occurredOn, ...extra }, { now: update.changedAt, id: context.id });
+      record = result.record;
+      // Keep the source wording for the synced status, as the original import does.
+      if (statusId !== 'submitted') record.events.find(event => event.id === result.event.id)!.statusNameSnapshot = update.sourceStatus;
+    };
+    if (update.submittedOn) {
+      const first = record.events.filter(event => event.invalidatedAt === null).sort((left, right) => left.sequence - right.sequence)[0];
+      appendSynced('submitted', update.submittedOn, `sync:${update.sourceId}:submitted`, first ? { mode: 'backfill', beforeEventId: first.id } : {});
+    }
+    if (mapping.statusId !== 'submitted') {
+      appendSynced(mapping.statusId, update.occurredOn, `sync:${update.sourceId}:${update.changedAt}`, {
+        ...(mapping.failedAt ? { failedAt: mapping.failedAt } : {}),
+        ...(update.reopen ? { mode: 'reopen' as const, reopenReason: RAW_IMPORT_SYNC_REOPEN_REASON } : {}),
+      });
+    }
+    next.progressRecords[recordIndex] = record;
+    syncApplicationWithProgress(application, record);
+    if (update.changedAt > application.updatedAt) application.updatedAt = update.changedAt;
+  }
+  for (const addition of plan.additions) {
+    if (next.applications.some(item => item.id === addition.application.id)) throw new DomainError('CONFLICT', `投递 ID 已存在：${addition.application.id}，请重新预览`);
+    if (addition.application.seasonId !== plan.seasonId) throw new DomainError('VALIDATION', '新增投递不属于所选招聘季');
+    next.applications.push(structuredClone(addition.application));
+    next.progressRecords.push(structuredClone(addition.progress));
+  }
+  validateV2Snapshot(next);
+  return next;
 }

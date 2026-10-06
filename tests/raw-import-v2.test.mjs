@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { defaultR1Definitions } from '../dist/domain/v2/definitions.js';
-import { parseRawApplicationsImport, RAW_STATUS_MAPPINGS } from '../dist/domain/v2/raw-import.js';
-import { validateProgressRecord } from '../dist/domain/v2/progress.js';
-import { validateV2Snapshot } from '../dist/domain/v2/snapshot.js';
+import { applyRawImportSync, parseRawApplicationsImport, planRawImportSync, RAW_IMPORT_SYNC_REOPEN_REASON, RAW_STATUS_MAPPINGS } from '../dist/domain/v2/raw-import.js';
+import { appendProgressEvent, validateProgressRecord } from '../dist/domain/v2/progress.js';
+import { syncApplicationWithProgress, validateV2Snapshot } from '../dist/domain/v2/snapshot.js';
 
 const channels = [{ id: 'official', name: '官网', archivedAt: null }];
 const definitions = defaultR1Definitions();
@@ -167,4 +167,90 @@ test('接受用户 JSON 文本和 applications 包装对象，并对错误 JSON 
   const invalid = parse('{ broken json');
   assert.equal(invalid.applications.length, 0);
   assert.match(invalid.issues[0].message, /JSON 格式无效/);
+});
+
+function importedSnapshot(rows) {
+  const result = parseRawApplicationsImport(rows, { seasonId: 'season-2026', channels, definitions });
+  assert.deepEqual(result.issues, []);
+  return {
+    schemaVersion: 2,
+    workspace: { id: 'workspace', name: '本地', timeZone: 'Asia/Shanghai', activeSeasonId: 'season-2026' },
+    seasons: [{ id: 'season-2026', name: '2026 秋招', startDate: '2026-07-01', endDate: '2026-12-31', targetCount: 100, archivedAt: null }],
+    channels,
+    settings: { schemaVersion: 2, lastBackupAt: null, preferences: {} },
+    applications: result.applications.map(item => item.application),
+    schedules: [], definitions, progressRecords: result.applications.map(item => item.progress),
+    legacyHistory: [], migration: null,
+  };
+}
+
+function appendInApp(snapshot, applicationId, statusId, occurredOn, now) {
+  const index = snapshot.progressRecords.findIndex(record => record.applicationId === applicationId);
+  const record = appendProgressEvent(snapshot.progressRecords[index], definitions, { commandId: `app-${statusId}-${now}`, statusId, occurredOn }, { now, id: () => `app-event-${now}` }).record;
+  snapshot.progressRecords[index] = record;
+  const application = snapshot.applications.find(item => item.id === applicationId);
+  syncApplicationWithProgress(application, record);
+  application.updatedAt = now;
+}
+
+test('同步再次导出的原始 JSON：只追加更晚的状态、新增记录，并识别重复与改投岗位', () => {
+  const at = day => `2026-09-${day}T10:00:00+08:00`;
+  const first = [
+    sourceRow('same', '筛选中', { statusUpdatedAt: at('03') }),
+    sourceRow('failed-later', '筛选中', { statusUpdatedAt: at('03') }),
+    sourceRow('app-newer', '已投递', { statusUpdatedAt: at('03') }),
+    sourceRow('reused', '筛选中', { position: '后端工程师', statusUpdatedAt: at('03') }),
+    sourceRow('was-failed', '挂掉', { statusUpdatedAt: at('03') }),
+  ];
+  const snapshot = importedSnapshot(first);
+  appendInApp(snapshot, 'raw-import-app-newer', 'written_test_active', '2026-09-20', '2026-09-20T08:00:00.000Z');
+  snapshot.applications.push({ ...structuredClone(snapshot.applications[0]), id: 'manual-1', company: '手动公司', role: '实习生', appliedOn: null, currentEventId: null, currentStatusId: 'draft', currentStage: null, phase: 'unknown', outcome: 'active', failedAt: null });
+  snapshot.progressRecords.push({ applicationId: 'manual-1', appliedOn: null, events: [], annotations: [] });
+  appendInApp(snapshot, 'manual-1', 'submitted', '2026-09-17', '2026-09-17T09:00:00.000Z');
+  appendInApp(snapshot, 'manual-1', 'assessment_active', '2026-09-17', '2026-09-17T09:01:00.000Z');
+  validateV2Snapshot(snapshot);
+
+  const latest = [
+    sourceRow('same', '筛选中', { statusUpdatedAt: at('03') }),
+    sourceRow('failed-later', '挂掉', { statusUpdatedAt: at('22'), updatedAt: at('22') }),
+    sourceRow('app-newer', '筛选中', { statusUpdatedAt: at('10') }),
+    sourceRow('reused', '筛选中', { position: '全栈工程师', applyDate: '2026-09-23', statusUpdatedAt: at('03'), updatedAt: at('23') }),
+    sourceRow('was-failed', '泡池', { statusUpdatedAt: at('21') }),
+    sourceRow('brand-new', '笔试', { applyDate: '2026-09-21', createdAt: at('21'), updatedAt: at('21'), statusUpdatedAt: at('21') }),
+    sourceRow('dup-of-manual', '测评中', { company: '手动公司', position: '工程师', applyDate: '2026-09-17', statusUpdatedAt: at('17') }),
+  ];
+  const plan = planRawImportSync(snapshot, JSON.stringify(latest), { seasonId: 'season-2026' });
+  assert.deepEqual(plan.issues, []);
+  assert.equal(plan.totalCount, 7);
+  assert.equal(plan.unchangedCount, 1);
+  assert.deepEqual(plan.statusUpdates.map(item => [item.sourceId, item.sourceStatus, item.occurredOn, item.reopen]), [
+    ['failed-later', '挂掉', '2026-09-22', false],
+    ['was-failed', '泡池', '2026-09-21', true],
+  ]);
+  assert.deepEqual(plan.additions.map(item => item.application.id), ['raw-import-reused--2', 'raw-import-brand-new']);
+  assert.deepEqual(plan.skipped.map(item => item.sourceId), ['app-newer', 'dup-of-manual']);
+  assert.match(plan.skipped[0].reason, /更新更晚/);
+  assert.match(plan.skipped[1].reason, /重复/);
+
+  const next = applyRawImportSync(snapshot, plan, { id: (() => { let n = 0; return () => `sync-${++n}`; })() });
+  assert.doesNotThrow(() => validateV2Snapshot(next));
+  assert.equal(next.applications.length, snapshot.applications.length + 2);
+  const failed = next.applications.find(item => item.id === 'raw-import-failed-later');
+  assert.equal(failed.outcome, 'failed');
+  assert.equal(failed.failedAt, 'unknown');
+  const failedEvents = next.progressRecords.find(record => record.applicationId === failed.id).events;
+  assert.equal(failedEvents.length, 3, '原有历史保留，只追加一条');
+  assert.equal(failedEvents.at(-1).statusNameSnapshot, '挂掉');
+  const reopened = next.progressRecords.find(record => record.applicationId === 'raw-import-was-failed').events.at(-1);
+  assert.equal(reopened.source, 'reopened');
+  assert.equal(reopened.reopenReason, RAW_IMPORT_SYNC_REOPEN_REASON);
+  const reused = next.applications.find(item => item.id === 'raw-import-reused--2');
+  assert.equal(reused.role, '全栈工程师');
+  assert.equal(reused.appliedOn, '2026-09-23');
+  assert.equal(next.applications.find(item => item.id === 'raw-import-reused').role, '后端工程师');
+  assert.equal(next.applications.find(item => item.id === 'raw-import-app-newer').currentStatusId, 'written_test_active');
+
+  const again = planRawImportSync(next, latest, { seasonId: 'season-2026' });
+  assert.equal(again.statusUpdates.length, 0, '同一文件再次同步不会重复追加');
+  assert.equal(again.additions.length, 0);
 });

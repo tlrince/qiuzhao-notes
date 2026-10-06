@@ -51,6 +51,31 @@ export interface BackupEnvelopeV2 {
   data: DataSnapshotV2;
 }
 
+/** Copies the effective chain tail onto the application's denormalized current-state fields. */
+export function syncApplicationWithProgress(application: ApplicationV2, progress: ProgressRecord): void {
+  const current = progress.events
+    .filter(event => event.invalidatedAt === null)
+    .sort((left, right) => left.sequence - right.sequence)
+    .at(-1) ?? null;
+
+  application.appliedOn = progress.appliedOn;
+  application.currentEventId = current?.id ?? null;
+  if (!current) {
+    application.currentStatusId = 'draft';
+    application.currentStage = null;
+    application.phase = 'unknown';
+    application.outcome = 'active';
+    application.failedAt = null;
+    return;
+  }
+
+  application.currentStatusId = current.statusId;
+  application.currentStage = current.semantics.stageId ?? current.contextStageId;
+  application.phase = current.phase;
+  application.outcome = current.semantics.terminalOutcome;
+  application.failedAt = current.semantics.terminalOutcome === 'failed' ? structuredClone(current.failedAt) : null;
+}
+
 export function validateV2Snapshot(value: unknown): asserts value is DataSnapshotV2 {
   requireRule(typeof value === 'object' && value !== null && !Array.isArray(value), 'v2 快照必须是对象');
   const snapshot = value as Partial<DataSnapshotV2>;

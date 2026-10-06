@@ -9,7 +9,7 @@ import {
   type AppendProgressInput,
   type CorrectProgressInput,
 } from '../../domain/v2/progress.js';
-import { validateV2Snapshot, type ApplicationV2, type DataSnapshotV2 } from '../../domain/v2/snapshot.js';
+import { syncApplicationWithProgress, validateV2Snapshot, type ApplicationV2, type DataSnapshotV2 } from '../../domain/v2/snapshot.js';
 import type { ProgressEvent, ProgressRecord } from '../../domain/v2/types.js';
 import type { SnapshotStoreV2 } from '../storage-v2-contract.js';
 
@@ -84,28 +84,8 @@ function assertExpectedRevision(expectedRevision: number, actualRevision: number
 }
 
 function syncApplicationProjection(application: ApplicationV2, progress: ProgressRecord, updatedAt: string): void {
-  const current = progress.events
-    .filter(event => event.invalidatedAt === null)
-    .sort((left, right) => left.sequence - right.sequence)
-    .at(-1) ?? null;
-
-  application.appliedOn = progress.appliedOn;
+  syncApplicationWithProgress(application, progress);
   application.updatedAt = updatedAt;
-  application.currentEventId = current?.id ?? null;
-  if (!current) {
-    application.currentStatusId = 'draft';
-    application.currentStage = null;
-    application.phase = 'unknown';
-    application.outcome = 'active';
-    application.failedAt = null;
-    return;
-  }
-
-  application.currentStatusId = current.statusId;
-  application.currentStage = current.semantics.stageId ?? current.contextStageId;
-  application.phase = current.phase;
-  application.outcome = current.semantics.terminalOutcome;
-  application.failedAt = current.semantics.terminalOutcome === 'failed' ? structuredClone(current.failedAt) : null;
 }
 
 /**
