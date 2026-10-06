@@ -35,7 +35,7 @@ export function createWebPlatform(options: { version?: string } = {}): PlatformS
     },
     async getAppVersion() { return options.version ?? '0.0.0'; },
     async loadLastRoute() { return null; }, async saveLastRoute() {},
-    async subscribeWindowAction() { return () => {}; }, async subscribeSettingsNavigation() { return () => {}; },
+    async subscribeWindowAction() { return () => {}; }, async subscribeSettingsNavigation() { return () => {}; }, async subscribeMenuAction() { return () => {}; },
     async finishWindowAction() {},
   };
 }

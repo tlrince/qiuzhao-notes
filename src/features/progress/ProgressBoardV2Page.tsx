@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { projectProgressTable } from '../../domain/v2/table.js';
 import { Drawer, ConfirmDialog } from '../../shared/ui/Dialog.js';
 import { Button, PageHeader } from '../../shared/ui/components.js';
@@ -53,6 +54,15 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
   const notice = useCallback((message: string, tone: NoticeTone = 'success', action?: NoticeAction) => show(message, tone, action), [show]);
   const actions = useApplicationActions(notice);
   const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const findRequested = searchParams.get('find') === '1';
+  // The Mac ⌘F menu lands here with ?find=1 when the current page has no search box.
+  useEffect(() => {
+    if (!findRequested || !searchRef.current) return;
+    searchRef.current.focus();
+    setSearchParams(params => { params.delete('find'); return params; }, { replace: true });
+  }, [findRequested, setSearchParams]);
   const [channelId, setChannelId] = useState(ALL);
   const [statusKey, setStatusKey] = useState(ALL);
   const [outcome, setOutcome] = useState<SheetFilters['outcome']>(ALL);
@@ -176,7 +186,7 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
         </div>)}
       </section>
       <section className="board-toolbar" aria-label="筛选与排序">
-        <label className="board-search"><Icon name="search" size={15} /><span className="sheet__sr-only">搜索</span><input type="search" placeholder="搜索公司 / 岗位 / 城市 / 备注…" value={search} onChange={event => setSearch(event.target.value)} /></label>
+        <label className="board-search"><Icon name="search" size={15} /><span className="sheet__sr-only">搜索</span><input ref={searchRef} type="search" placeholder="搜索公司 / 岗位 / 城市 / 备注…" value={search} onChange={event => setSearch(event.target.value)} /></label>
         <select className="board-select" aria-label="按结果筛选" value={outcome} onChange={event => setOutcome(event.target.value as SheetFilters['outcome'])}>
           <option value={ALL}>全部结果</option>
           <option value="active">进行中</option>

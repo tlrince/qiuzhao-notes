@@ -203,3 +203,18 @@ export function localBusinessDate(now = new Date()): string {
 export function phaseLabel(phase: string): string {
   return ({ unknown: '结果未知', waiting: '待安排', in_progress: '进行中', awaiting_result: '待结果', passed: '已通过' } as Record<string, string>)[phase] ?? phase;
 }
+
+export interface StatusOptionGroup { label: string; statuses: StatusDefinition[] }
+
+/** Groups selectable statuses under their stage (in stage order) for an <optgroup> dropdown; stage-less ones come first. */
+export function statusOptionGroups(statuses: readonly StatusDefinition[], definitions: R1DefinitionsSnapshot): StatusOptionGroup[] {
+  const stages = [...definitions.stages].sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
+  const groups: StatusOptionGroup[] = [];
+  const general = statuses.filter(status => status.stageId === null || !stages.some(stage => stage.id === status.stageId));
+  if (general.length) groups.push({ label: '通用', statuses: general });
+  for (const stage of stages) {
+    const items = statuses.filter(status => status.stageId === stage.id);
+    if (items.length) groups.push({ label: stage.name, statuses: items });
+  }
+  return groups;
+}

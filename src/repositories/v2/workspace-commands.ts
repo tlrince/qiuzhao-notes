@@ -1,7 +1,7 @@
 import { DomainError, requireRule } from '../../domain/errors.js';
 import { validateDate, validateInstant } from '../../domain/validation.js';
 import { validateV2Snapshot, type DataSnapshotV2 } from '../../domain/v2/snapshot.js';
-import type { Season, Workspace } from '../../domain/types.js';
+import type { Channel, Season, Workspace } from '../../domain/types.js';
 import type { SnapshotStoreV2 } from '../storage-v2-contract.js';
 
 export interface WorkspaceCommands {
@@ -9,6 +9,11 @@ export interface WorkspaceCommands {
   createSeason(input: { expectedRevision: number; name: string; startDate: string; endDate: string; targetCount: number; activate?: boolean }): Promise<{ revision: number; value: Season }>;
   updateSeason(input: { expectedRevision: number; seasonId: string; patch: Partial<Pick<Season, 'name' | 'startDate' | 'endDate' | 'targetCount'>> }): Promise<{ revision: number; value: Season }>;
   archiveSeason(input: { expectedRevision: number; seasonId: string }): Promise<{ revision: number; value: Season }>;
+  unarchiveSeason(input: { expectedRevision: number; seasonId: string }): Promise<{ revision: number; value: Season }>;
+  createChannel(input: { expectedRevision: number; name: string }): Promise<{ revision: number; value: Channel }>;
+  renameChannel(input: { expectedRevision: number; channelId: string; name: string }): Promise<{ revision: number; value: Channel }>;
+  archiveChannel(input: { expectedRevision: number; channelId: string }): Promise<{ revision: number; value: Channel }>;
+  unarchiveChannel(input: { expectedRevision: number; channelId: string }): Promise<{ revision: number; value: Channel }>;
   setPreference(input: { expectedRevision: number; key: string; value: string | number | boolean }): Promise<{ revision: number; value: string | number | boolean }>;
 }
 
@@ -37,6 +42,19 @@ export function createWorkspaceCommands(
     const season = snapshot.seasons.find(item => item.id === seasonId);
     if (!season) throw new DomainError('NOT_FOUND', '招聘季不存在');
     return season;
+  };
+
+  const findChannel = (snapshot: DataSnapshotV2, channelId: string): Channel => {
+    const channel = snapshot.channels.find(item => item.id === channelId);
+    if (!channel) throw new DomainError('NOT_FOUND', '渠道不存在');
+    return channel;
+  };
+
+  const channelName = (snapshot: DataSnapshotV2, value: string, exceptId?: string): string => {
+    const name = value.trim();
+    requireRule(name.length > 0 && name.length <= 40, '渠道名称不能为空且最多 40 个字符');
+    requireRule(!snapshot.channels.some(item => item.id !== exceptId && item.archivedAt === null && item.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase()), '已有同名渠道');
+    return name;
   };
 
   return {
@@ -95,6 +113,50 @@ export function createWorkspaceCommands(
         season.archivedAt = timestamp;
         if (snapshot.workspace.activeSeasonId === season.id) snapshot.workspace.activeSeasonId = null;
         return season;
+      });
+    },
+    unarchiveSeason(input) {
+      return transact(input.expectedRevision, snapshot => {
+        const season = findSeason(snapshot, input.seasonId);
+        requireRule(season.archivedAt !== null, '招聘季没有归档');
+        season.archivedAt = null;
+        if (snapshot.workspace.activeSeasonId === null) snapshot.workspace.activeSeasonId = season.id;
+        return season;
+      });
+    },
+    createChannel(input) {
+      return transact(input.expectedRevision, snapshot => {
+        const name = channelName(snapshot, input.name);
+        const channelId = id();
+        requireRule(typeof channelId === 'string' && channelId.trim().length > 0 && !snapshot.channels.some(item => item.id === channelId), '渠道 ID 无效');
+        const channel: Channel = { id: channelId, name, archivedAt: null };
+        snapshot.channels.push(channel);
+        return channel;
+      });
+    },
+    renameChannel(input) {
+      return transact(input.expectedRevision, snapshot => {
+        const channel = findChannel(snapshot, input.channelId);
+        channel.name = channelName(snapshot, input.name, channel.id);
+        return channel;
+      });
+    },
+    archiveChannel(input) {
+      return transact(input.expectedRevision, (snapshot, timestamp) => {
+        const channel = findChannel(snapshot, input.channelId);
+        requireRule(channel.archivedAt === null, '渠道已经归档');
+        requireRule(snapshot.channels.some(item => item.id !== channel.id && item.archivedAt === null), '至少保留一个可用渠道');
+        channel.archivedAt = timestamp;
+        return channel;
+      });
+    },
+    unarchiveChannel(input) {
+      return transact(input.expectedRevision, snapshot => {
+        const channel = findChannel(snapshot, input.channelId);
+        requireRule(channel.archivedAt !== null, '渠道没有归档');
+        channelName(snapshot, channel.name, channel.id);
+        channel.archivedAt = null;
+        return channel;
       });
     },
     setPreference(input) {

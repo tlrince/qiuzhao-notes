@@ -56,6 +56,8 @@ p { line-height: 1.8; }
 .goal-unset { font-family: var(--font-serif); font-size: 17px; margin: 16px 0 6px; }
 .goal-card p { font-size: 10px; color: var(--color-muted); }
 .goal-card a { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--color-accent); margin-top: 13px; }
+.goal-card a.goal-edit { display: inline-flex; margin: 6px 0 0; font-size: 12px; font-weight: 600; }
+.goal-card p:has(.goal-edit) { display: grid; justify-items: start; }
 .goal-number { font-family: var(--font-serif); font-size: 28px; margin: 12px 0; }.goal-number span { font: 11px var(--font-sans); color: var(--color-muted); margin-left: 7px; }
 progress { display: block; appearance: none; width: 100%; height: 4px; margin-bottom: 12px; border: 0; background: var(--color-border); }
 progress::-webkit-progress-bar { background: var(--color-border); } progress::-webkit-progress-value { background: var(--color-accent); } progress::-moz-progress-bar { background: var(--color-accent); }

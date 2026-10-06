@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { STAGES, type Season } from '../domain/types.js';
+import { Link, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
+import { STAGES } from '../domain/types.js';
 import { calculateV2Analytics } from '../domain/v2/analytics.js';
 import { useV2Data } from './V2DataContext.js';
 import { AppShell } from './AppShell.js';
@@ -13,8 +13,10 @@ import { ApplicationsV2Page } from '../features/applications/ApplicationsV2Page.
 import { AnalysisV2Page } from '../features/analytics/AnalysisV2Page.js';
 import { ProgressBoardV2Page } from '../features/progress/ProgressBoardV2Page.js';
 import { DefinitionManager, type DefinitionManagerCommands } from '../features/settings/DefinitionManager.js';
+import { ChannelSettings, SeasonList } from '../features/settings/WorkspaceSettings.js';
 import { PlatformPreview } from './PlatformPreview.js';
 import { useBackupExport } from './useBackupExport.js';
+import { MenuActions } from './MenuActions.js';
 import { CreateApplicationDrawer } from '../features/applications/ApplicationDrawers.js';
 import { ToastRegion, useToasts } from '../shared/ui/Toast.js';
 import type { BackupRestorePreview } from '../repositories/v2/backup-commands.js';
@@ -66,9 +68,7 @@ function Settings() {
   const [confirmRecoveryRestore, setConfirmRecoveryRestore] = useState(false);
   const [recoveryToDelete, setRecoveryToDelete] = useState<RecoverySnapshotInfo | null>(null);
   const [confirmRecoveryDelete, setConfirmRecoveryDelete] = useState(false);
-  const [seasonToArchive, setSeasonToArchive] = useState<Season | null>(null);
   const recoverySnapshotBytes = recoverySnapshots.reduce((total, item) => total + item.estimatedJsonBytes, 0);
-  const activeSeason = snapshot.seasons.find(season => season.id === snapshot.workspace.activeSeasonId);
   useEffect(() => {
     let mounted = true;
     void backupCommands.listRecoverySnapshots().then(items => {
@@ -84,19 +84,6 @@ function Settings() {
       await runWorkspaceCommand((commands, expectedRevision) => commands.createSeason({ expectedRevision, name, startDate, endDate, targetCount: Number(targetCount), activate: true }));
       setMessage('招聘季已创建并设为当前招聘季。');
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : '创建招聘季失败。'); }
-    finally { setBusy(false); }
-  };
-  const setActive = async (seasonId: string) => {
-    setBusy(true); setMessage('');
-    try { await runWorkspaceCommand((commands, expectedRevision) => commands.setActiveSeason({ expectedRevision, seasonId })); setMessage('当前招聘季已切换。'); }
-    catch (cause) { setMessage(cause instanceof Error ? cause.message : '切换招聘季失败。'); }
-    finally { setBusy(false); }
-  };
-  const archive = async (season: Season) => {
-    setSeasonToArchive(null);
-    setBusy(true); setMessage('');
-    try { await runWorkspaceCommand((commands, expectedRevision) => commands.archiveSeason({ expectedRevision, seasonId: season.id })); setMessage('招聘季已归档。'); }
-    catch (cause) { setMessage(cause instanceof Error ? cause.message : '归档招聘季失败。'); }
     finally { setBusy(false); }
   };
   const exportBackup = async () => {
@@ -148,12 +135,19 @@ function Settings() {
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : '删除恢复副本失败，副本仍保留。'); }
     finally { setBackupBusy(false); }
   };
+  const [searchParams, setSearchParams] = useSearchParams();
+  const menuRestore = searchParams.get('action') === 'restore';
+  useEffect(() => {
+    if (!menuRestore) return;
+    setSearchParams(params => { params.delete('action'); return params; }, { replace: true });
+    void chooseBackup();
+  }, [menuRestore]); // chooseBackup only reads stable services; run once per menu request.
   const totalBytes = new TextEncoder().encode(JSON.stringify(snapshot)).byteLength;
   return <ScaffoldPage eyebrow="A SPACE OF YOUR OWN" title="管理你的工作空间。" description="创建招聘季、设置目标，查看当前本地数据状态。">
     {message && <p className="quiet-note" role="status">{message}</p>}
     <div className="two-column settings-grid">
-      <ChartCard title="我的招聘季" subtitle="名称、日期范围与投递目标">
-        {snapshot.seasons.filter(season => season.archivedAt === null).length ? <ul className="overview-list">{snapshot.seasons.filter(season => season.archivedAt === null).map(season => <li key={season.id}><div><strong>{season.name}{season.id === activeSeason?.id ? ' · 当前' : ''}</strong><span>{season.startDate} 至 {season.endDate} · 目标 {season.targetCount} 份</span></div><div className="page-actions"><Button type="button" variant="secondary" disabled={busy || season.id === activeSeason?.id} onClick={() => void setActive(season.id)}>设为当前</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => setSeasonToArchive(season)}>归档</Button></div></li>)}</ul> : <EmptyState icon="leaf" title="还没有招聘季" description="创建一个招聘季后，就可以开始记录投递。" />}
+      <ChartCard title="我的招聘季" subtitle="名称、日期范围与投递目标，点「编辑」可以修改">
+        <SeasonList onMessage={setMessage} />
         <form className="application-form settings-season-form" onSubmit={createSeason}>
           <h3>新建招聘季</h3>
           <label>名称<input required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></label>
@@ -169,6 +163,11 @@ function Settings() {
         <p>最近备份 / 下载发起：{snapshot.settings.lastBackupAt ? new Date(snapshot.settings.lastBackupAt).toLocaleString('zh-CN') : '尚未备份'}。Web 端只记录浏览器收到下载请求的时间。</p>
         <span className="card-tag">数据层已启用 · 快照版本 {revision}</span>
       </div></ChartCard>
+    </div>
+    <div className="settings-backup-section">
+      <ChartCard title="投递渠道" subtitle="新增、改名或归档渠道。归档的渠道不再出现在新建投递的选项里，已有投递照常显示。">
+        <ChannelSettings onMessage={setMessage} />
+      </ChartCard>
     </div>
     <div className="settings-backup-section">
       <ChartCard title="完整数据备份" subtitle="备份包含所有招聘季、投递、进度历史、状态配置与设置，不受页面筛选影响。">
@@ -199,7 +198,6 @@ function Settings() {
       </ChartCard>
     </div>
     <div className="page-actions"><Link className="button button--secondary" to="/settings/definitions">管理状态与环节<Icon name="arrow" size={16} /></Link></div>
-    <ConfirmDialog open={!!seasonToArchive} onCancel={() => setSeasonToArchive(null)} onConfirm={() => { if (seasonToArchive) void archive(seasonToArchive); }} title={`归档「${seasonToArchive?.name ?? ''}」？`} description="已保存的记录会保留，归档后不能继续在这个招聘季新建投递。" confirmLabel="归档" cancelLabel="取消" />
     <ConfirmDialog open={confirmRestore} onCancel={() => setConfirmRestore(false)} onConfirm={() => void restoreBackup()} title="整体替换当前工作空间？" description={`将用「${restorePreview?.workspaceName ?? '未知工作空间'}」中的 ${restorePreview?.seasonNames.join('、') || `${restorePreview?.seasonCount ?? 0} 个招聘季`} 替换目前 ${snapshot.seasons.length} 个招聘季和 ${snapshot.applications.length} 条投递。备份内包含 ${restorePreview?.applicationCount ?? 0} 条投递、${restorePreview?.progressEventCount ?? 0} 条进度记录和 ${restorePreview?.scheduleCount ?? 0} 个日程；当前数据会由存储层保留为恢复副本。`} confirmLabel="整体恢复" cancelLabel="返回检查" />
     <ConfirmDialog open={confirmRecoveryRestore} onCancel={() => setConfirmRecoveryRestore(false)} onConfirm={() => void restoreSavedCopy()} title="用这个恢复副本替换当前数据？" description={recoveryToRestore ? `将恢复「${recoveryToRestore.seasonNames.join('、') || recoveryToRestore.workspaceName}」v${recoveryToRestore.sourceSchemaVersion}（修订 ${recoveryToRestore.sourceRevision}），包含 ${recoveryToRestore.seasonCount} 个招聘季和 ${recoveryToRestore.applicationCount} 条投递。当前快照会在同一事务中另存为一个新副本。` : ''} confirmLabel="恢复此副本" cancelLabel="返回检查" />
     <ConfirmDialog open={confirmRecoveryDelete} onCancel={() => { setConfirmRecoveryDelete(false); setRecoveryToDelete(null); }} onConfirm={() => void deleteSavedCopy()} title="永久删除这份恢复副本？" description={recoveryToDelete ? `将只删除「${recoveryToDelete.seasonNames.join('、') || recoveryToDelete.workspaceName}」v${recoveryToDelete.sourceSchemaVersion}（恢复副本 ID：${recoveryToDelete.id}；来源修订 ${recoveryToDelete.sourceRevision}），包含 ${recoveryToDelete.seasonCount} 个招聘季和 ${recoveryToDelete.applicationCount} 条投递。删除后无法从本机恢复；当前数据和其他恢复副本不受影响。` : ''} confirmLabel="永久删除此副本" cancelLabel="保留此副本" />
@@ -212,9 +210,11 @@ function DefinitionSettings() {
     onCreateStage: input => runDefinitionCommand((commands, expectedRevision) => commands.createStage({ workspaceId, expectedRevision, ...input })),
     onUpdateStage: input => runDefinitionCommand((commands, expectedRevision) => commands.updateStage({ workspaceId, expectedRevision, ...input })),
     onArchiveStage: stageId => runDefinitionCommand((commands, expectedRevision) => commands.archiveStage({ workspaceId, expectedRevision, stageId })),
+    onUnarchiveStage: stageId => runDefinitionCommand((commands, expectedRevision) => commands.unarchiveStage({ workspaceId, expectedRevision, stageId })),
     onCreateStatus: input => runDefinitionCommand((commands, expectedRevision) => commands.createStatus({ workspaceId, expectedRevision, ...input })),
     onUpdateStatus: input => runDefinitionCommand((commands, expectedRevision) => commands.updateStatus({ workspaceId, expectedRevision, ...input })),
     onArchiveStatus: statusId => runDefinitionCommand((commands, expectedRevision) => commands.archiveStatus({ workspaceId, expectedRevision, statusId })),
+    onUnarchiveStatus: statusId => runDefinitionCommand((commands, expectedRevision) => commands.unarchiveStatus({ workspaceId, expectedRevision, statusId })),
   }), [runDefinitionCommand, workspaceId]);
   return <DefinitionManager definitions={snapshot.definitions} onCommand={onCommand} />;
 }
@@ -280,5 +280,5 @@ export function App() {
     void runWorkspaceCommand((commands, expectedRevision) => commands.setActiveSeason({ expectedRevision, seasonId })).catch(cause => setWorkspaceError(cause instanceof Error ? cause.message : '切换招聘季失败'));
   };
   const workspace = { ...snapshot.workspace, activeSeasonId };
-  return <AppShell workspace={workspace} seasons={snapshot.seasons.filter(season => season.archivedAt === null)} submittedCount={submittedCount} saveStatus={saveStatus as SaveStatus} saveError={lastError} onDismissSaveError={dismissError} onSeasonChange={onSeasonChange}>{workspaceError && <p className="platform-error" role="alert">{workspaceError}</p>}<ErrorBoundary resetKey={location.pathname} fallback={(error, reset) => <PageError error={error} reset={reset} />}><Routes><Route path="/" element={<DefaultRoute />} /><Route path="/analytics" element={<AnalyticsRoute seasonId={activeSeasonId} onSeasonChange={onSeasonChange} />} /><Route path="/overview" element={<Overview />} /><Route path="/applications" element={<ApplicationsV2Page seasonId={activeSeasonId} />} /><Route path="/board" element={<ProgressBoardV2Page seasonId={activeSeasonId} />} /><Route path="/settings" element={<Settings />} /><Route path="/settings/definitions" element={<DefinitionSettings />} /><Route path="/design-system" element={<DesignSystem preview={preview} onPreviewChange={setPreview} />} /><Route path="*" element={<ScaffoldPage eyebrow="FIND YOUR WAY" title="这一页，还没有留下记录。" description="页面可能不存在，回到熟悉的工作空间继续吧。"><Link className="button button--primary" to="/analytics">返回深度分析<Icon name="arrow" size={16} /></Link></ScaffoldPage>} /></Routes></ErrorBoundary></AppShell>;
+  return <AppShell workspace={workspace} seasons={snapshot.seasons.filter(season => season.archivedAt === null)} submittedCount={submittedCount} saveStatus={saveStatus as SaveStatus} saveError={lastError} onDismissSaveError={dismissError} onSeasonChange={onSeasonChange}><MenuActions seasonId={activeSeasonId} />{workspaceError && <p className="platform-error" role="alert">{workspaceError}</p>}<ErrorBoundary resetKey={location.pathname} fallback={(error, reset) => <PageError error={error} reset={reset} />}><Routes><Route path="/" element={<DefaultRoute />} /><Route path="/analytics" element={<AnalyticsRoute seasonId={activeSeasonId} onSeasonChange={onSeasonChange} />} /><Route path="/overview" element={<Overview />} /><Route path="/applications" element={<ApplicationsV2Page seasonId={activeSeasonId} />} /><Route path="/board" element={<ProgressBoardV2Page seasonId={activeSeasonId} />} /><Route path="/settings" element={<Settings />} /><Route path="/settings/definitions" element={<DefinitionSettings />} /><Route path="/design-system" element={<DesignSystem preview={preview} onPreviewChange={setPreview} />} /><Route path="*" element={<ScaffoldPage eyebrow="FIND YOUR WAY" title="这一页，还没有留下记录。" description="页面可能不存在，回到熟悉的工作空间继续吧。"><Link className="button button--primary" to="/analytics">返回深度分析<Icon name="arrow" size={16} /></Link></ScaffoldPage>} /></Routes></ErrorBoundary></AppShell>;
 }

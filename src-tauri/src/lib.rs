@@ -259,9 +259,9 @@ fn app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         "文件",
         true,
         &[
-            &MenuItem::with_id(app, "new", "新增投递", false, Some("CmdOrCtrl+N"))?,
-            &MenuItem::with_id(app, "backup", "导出备份…", false, None::<&str>)?,
-            &MenuItem::with_id(app, "restore", "恢复备份…", false, None::<&str>)?,
+            &MenuItem::with_id(app, "new", "新增投递", true, Some("CmdOrCtrl+N"))?,
+            &MenuItem::with_id(app, "backup", "导出备份…", true, Some("CmdOrCtrl+Shift+E"))?,
+            &MenuItem::with_id(app, "restore", "恢复备份…", true, None::<&str>)?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -277,7 +277,7 @@ fn app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &PredefinedMenuItem::paste(app, Some("粘贴"))?,
             &PredefinedMenuItem::select_all(app, Some("全选"))?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "find", "查找", false, Some("CmdOrCtrl+F"))?,
+            &MenuItem::with_id(app, "find", "查找", true, Some("CmdOrCtrl+F"))?,
         ],
     )?;
     let window = Submenu::with_items(
@@ -343,6 +343,13 @@ pub fn run() {
                     let _ = window.show();
                     let _ = window.set_focus();
                     let _ = window.emit("navigate-settings", ());
+                }
+            }
+            action @ ("new" | "backup" | "restore" | "find") => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    let _ = window.emit("menu-action", action);
                 }
             }
             "quit" => request_action(app, "quit"),
