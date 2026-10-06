@@ -135,3 +135,5 @@ progress::-webkit-progress-bar { background: var(--color-border); } progress::-w
 .update-notice__actions .update-notice__go { border-color: var(--color-accent); background: var(--color-accent); color: #fff; font-weight: 600; }
 .update-notice__actions button:disabled { opacity: .6; }
 @media (max-width: 767px) { .update-notice { right: 16px; bottom: 16px; } .settings-about { padding-inline: 18px; } }
+.settings-backup-actions { padding: 4px 24px 20px; }
+@media (max-width: 767px) { .settings-backup-actions { padding-inline: 18px; } }

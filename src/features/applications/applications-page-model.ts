@@ -1,8 +1,11 @@
 import type { ApplicationV2 } from '../../domain/v2/snapshot.js';
 
-type SearchableApplication = Pick<ApplicationV2, 'seasonId' | 'company' | 'role' | 'city' | 'updatedAt'>;
+type SearchableApplication = Pick<ApplicationV2, 'seasonId' | 'company' | 'role' | 'city' | 'appliedOn' | 'createdAt'>;
 
-/** A season-scoped search that deliberately covers only the fields named in the UI contract. */
+/**
+ * A season-scoped search that deliberately covers only the fields named in the UI contract.
+ * Rows are always newest application date first; drafts without a date lead, newest created first.
+ */
 export function filterApplicationsForSeason<T extends SearchableApplication>(
   applications: readonly T[],
   seasonId: string,
@@ -12,7 +15,8 @@ export function filterApplicationsForSeason<T extends SearchableApplication>(
   return applications
     .filter(application => application.seasonId === seasonId
       && (!needle || `${application.company} ${application.role} ${application.city}`.toLocaleLowerCase().includes(needle)))
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)
+    .sort((left, right) => (right.appliedOn ?? '9999-12-31').localeCompare(left.appliedOn ?? '9999-12-31')
+      || right.createdAt.localeCompare(left.createdAt)
       || left.company.localeCompare(right.company, 'zh-CN'));
 }
 

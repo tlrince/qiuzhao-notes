@@ -1,5 +1,6 @@
 import './ProgressHistory.css';
 import { useState } from 'react';
+import { ConfirmDialog } from '../../shared/ui/Dialog.js';
 import { projectProgressHistory, type ProgressHistoryNode, type ProgressHistoryUncertainEdge } from './history.js';
 import type { ProgressEvent } from '../../domain/v2/types.js';
 
@@ -17,6 +18,8 @@ export interface ProgressHistoryProps {
   /** The supplied id is the event that the new backfilled event must precede. */
   onBackfill?: (beforeEventId: string) => void;
   onCorrect?: (event: ProgressEvent) => void;
+  /** Removes a mistaken record; the component asks for confirmation first. */
+  onDelete?: (event: ProgressEvent) => void;
   onSelectEvent?: (event: ProgressEvent) => void;
   title?: string;
 }
@@ -38,6 +41,14 @@ function tone(node: ProgressHistoryNode): string {
 
 const shortDate = (date: string) => date.slice(5).replace('-', '/');
 
+/** A thin connector with a small round-capped chevron; dashed when the order is uncertain or for the next step. */
+function Connector({ dashed = false, chevron = true }: { dashed?: boolean; chevron?: boolean }) {
+  return <svg className="progress-history__connector" width="34" height="12" viewBox="0 0 34 12" aria-hidden="true">
+    <path d={chevron ? 'M3 6H29' : 'M3 6H31'} strokeDasharray={dashed ? '3 3' : undefined} />
+    {chevron ? <path d="M26 2.5 29.5 6 26 9.5" /> : null}
+  </svg>;
+}
+
 /** A horizontal timeline of the effective events; selecting a node shows its details and actions. */
 function ProgressHistory({
   events,
@@ -46,6 +57,7 @@ function ProgressHistory({
   onAppend,
   onBackfill,
   onCorrect,
+  onDelete,
   onSelectEvent,
   title = '进度历史',
 }: ProgressHistoryProps) {
@@ -53,6 +65,7 @@ function ProgressHistory({
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const selectedNode = history.nodes.find(node => node.event.id === selectedEventId) ?? null;
   const selected = selectedNode?.event ?? null;
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
     <section className="progress-history" aria-label={title}>
@@ -95,7 +108,7 @@ function ProgressHistory({
                   </button>
                   {link ? (
                     <span className={`progress-history__edge${link.uncertain ? ' progress-history__edge--uncertain' : ''}`} title={link.uncertaintyReason ?? undefined}>
-                      <span aria-hidden="true" className="progress-history__arrow" />
+                      <Connector dashed={link.uncertain} />
                       {link.uncertain ? <span className="progress-history__sr-only">连接顺序待确认：{link.uncertaintyReason}</span> : null}
                     </span>
                   ) : null}
@@ -104,7 +117,7 @@ function ProgressHistory({
             })}
             {onAppend ? (
               <li className="progress-history__node progress-history__node--add">
-                <span className="progress-history__edge progress-history__edge--next" aria-hidden="true"><span className="progress-history__arrow" /></span>
+                <span className="progress-history__edge progress-history__edge--next" aria-hidden="true"><Connector dashed chevron={false} /></span>
                 <button type="button" className="progress-history__add" onClick={onAppend}>＋ 记录新进展</button>
               </li>
             ) : null}
@@ -119,6 +132,7 @@ function ProgressHistory({
             <div className="progress-history__details-actions">
               {onBackfill ? <button type="button" onClick={() => onBackfill(selected.id)}>在此之前补录</button> : null}
               {onCorrect ? <button type="button" onClick={() => onCorrect(selected)}>纠错</button> : null}
+              {onDelete ? <button type="button" className="progress-history__delete" onClick={() => setConfirmDelete(true)}>删除这条</button> : null}
             </div>
           </div>
           <dl>
@@ -138,7 +152,16 @@ function ProgressHistory({
             {selected.correctionOfEventId ? <p>纠正来源 ID <code>{selected.correctionOfEventId}</code></p> : null}
           </details>
         </aside>
-      ) : history.nodes.length > 0 ? <p className="progress-history__hint">点一个节点可以查看详情、在它之前补录或纠错。</p> : null}
+      ) : history.nodes.length > 0 ? <p className="progress-history__hint">点一个节点可以查看详情、在它之前补录、纠错或删除。</p> : null}
+      {onDelete ? <ConfirmDialog
+        open={confirmDelete && !!selected}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => { setConfirmDelete(false); if (selected) { setSelectedEventId(null); onDelete(selected); } }}
+        title={`删除「${selected?.statusNameSnapshot ?? ''}」这条进展？`}
+        description={`适用于记错或重复记录的进展。删除后流程里不再显示这一条，统计也不再计入；后面的记录会自动接上（${selected?.occurredOn ?? ''}）。`}
+        confirmLabel="删除"
+        cancelLabel="取消"
+      /> : null}
     </section>
   );
 }

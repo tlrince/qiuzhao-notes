@@ -58,12 +58,9 @@
 .progress-history__meta { grid-column: 2; color: var(--tone); font-size: 12px; white-space: nowrap; }
 .progress-history__note { grid-column: 1 / -1; max-width: 176px; margin-top: 3px; overflow: hidden; color: var(--history-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
-.progress-history__edge { position: relative; display: flex; align-items: center; width: 28px; height: 2px; margin: 0 2px; background: var(--history-line); }
-.progress-history__edge--uncertain { background: repeating-linear-gradient(90deg, var(--history-muted) 0 4px, transparent 4px 7px); }
-.progress-history__arrow { position: absolute; right: -1px; width: 6px; height: 6px; border-top: 2px solid var(--history-line); border-right: 2px solid var(--history-line); transform: rotate(45deg); }
-.progress-history__edge--uncertain .progress-history__arrow { border-color: var(--history-muted); }
-.progress-history__node--add .progress-history__edge { background: none; border-top: 2px dashed var(--history-line); height: 0; }
-.progress-history__node--add .progress-history__arrow { display: none; }
+.progress-history__edge { display: flex; align-items: center; flex: none; padding: 0 2px; color: #bdb6a7; }
+.progress-history__edge--uncertain { color: var(--history-muted); }
+.progress-history__connector { display: block; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
 .progress-history__add { min-height: 34px; padding: 6px 12px; border: 1px dashed var(--history-active); border-radius: 10px; background: transparent; color: var(--history-active); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .progress-history__add:hover { background: color-mix(in srgb, var(--history-active) 8%, white); }
@@ -85,3 +82,5 @@
 .progress-history__tech code { font-size: 12px; overflow-wrap: anywhere; }
 
 .progress-history__sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.progress-history__details-actions .progress-history__delete { color: #b42318; }
+.progress-history__details-actions .progress-history__delete:hover { border-color: #b42318; color: #b42318; }

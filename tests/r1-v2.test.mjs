@@ -376,3 +376,26 @@ test('语义默认值变更后，旧 commandId 重试仍保持幂等', () => {
   assert.equal(retry.duplicate, true);
   assert.equal(retry.event.phase, 'waiting');
 });
+
+test('删除误录的进展：后续同一轮的记录并回前一轮，经历次数回到一次', () => {
+  let r = record('remove-mistake');
+  r = enter(r, 'submit', 'submitted', '2026-09-01').record;
+  r = enter(r, 'wait', 'interview_1_waiting', '2026-09-02').record;
+  r = enter(r, 'again', 'interview_1_waiting', '2026-09-03').record;
+  r = enter(r, 'active', 'interview_1_active', '2026-09-04', { mode: 'continue_visit' }).record;
+  const visits = current => new Set(current.events.filter(event => event.invalidatedAt === null && event.semantics.stageId === 'interview_1').map(event => event.visitId)).size;
+  const id = commandId => r.events.find(event => event.commandId === commandId).id;
+  assert.equal(visits(r), 2);
+
+  const cleaned = invalidateProgressEvent(r, definitions, id('again'), '2026-09-17T15:00:00.000Z');
+  const active = cleaned.events.filter(event => event.invalidatedAt === null);
+  assert.deepEqual(active.map(event => [event.commandId, event.sequence]), [['submit', 1], ['wait', 2], ['active', 3]]);
+  assert.equal(visits(cleaned), 1);
+
+  // With nothing of the same stage before it, the continuing record opens its own visit.
+  const onlyActive = invalidateProgressEvent(cleaned, definitions, id('wait'), '2026-09-17T15:01:00.000Z');
+  const orphan = onlyActive.events.find(event => event.id === id('active'));
+  assert.equal(orphan.visitAction, 'new');
+  assert.equal(orphan.source, 'entered');
+  assert.equal(visits(onlyActive), 1);
+});

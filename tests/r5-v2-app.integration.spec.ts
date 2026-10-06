@@ -104,10 +104,12 @@ test('the sheet records forward progress in one stage as a single visit', async 
   const createDialog = page.getByRole('dialog', { name: '新增投递' });
   await createDialog.getByLabel('公司').fill('同一轮公司');
   await createDialog.getByLabel('岗位 *', { exact: true }).fill('后端工程师');
-  await createDialog.getByLabel('当前状态').selectOption({ label: '笔试' });
+  await createDialog.getByLabel('当前状态').selectOption({ label: '笔试中' });
   await createDialog.getByRole('button', { name: '保存' }).click();
   const status = page.getByRole('combobox', { name: /修改同一轮公司的状态/ });
-  await expect(status).toHaveValue('stage:written_test');
+  await expect(status).toHaveValue('written_test_active');
+  // Every status of a stage is offered in the sheet, grouped under the stage.
+  await expect(status.locator('optgroup[label="一面"] option')).toHaveText(['待一面', '一面中', '一面待结果', '一面通过', '一面挂']);
 
   // Record the finer result through the full editor: 笔试中 → 笔试通过 stays one visit.
   await page.getByRole('button', { name: '展开同一轮公司的进度流程' }).click();
@@ -120,6 +122,14 @@ test('the sheet records forward progress in one stage as a single visit', async 
   await expect(drawer).toHaveCount(0);
   await expect(flow.locator('.sheet__stage').filter({ hasText: '笔试' })).not.toContainText('共 2 次');
   await expect(flow.locator('.progress-history__meta')).toHaveCount(0);
+  await expect(status).toHaveValue('written_test_passed');
+
+  // A mistaken record can be deleted from the timeline; the status falls back to the previous one.
+  await flow.getByRole('button', { name: /查看事件：笔试通过/ }).click();
+  await flow.getByRole('button', { name: '删除这条' }).click();
+  await page.getByRole('dialog', { name: /删除「笔试通过」这条进展/ }).getByRole('button', { name: '删除' }).click();
+  await expect(status).toHaveValue('written_test_active');
+  await expect(page.locator('.toast').filter({ hasText: '已删除「笔试通过」这条进展' })).toBeVisible();
 
   // Deleting from the sheet can be undone from the toast without a full recovery copy.
   await page.getByRole('button', { name: '删除同一轮公司 · 后端工程师' }).click();
@@ -128,5 +138,5 @@ test('the sheet records forward progress in one stage as a single visit', async 
   const toast = page.locator('.toast').filter({ hasText: '已删除「同一轮公司 · 后端工程师」' });
   await toast.getByRole('button', { name: '撤销' }).click();
   await expect(page.locator('.toast').filter({ hasText: '已恢复「同一轮公司 · 后端工程师」' })).toBeVisible();
-  await expect(status).toHaveValue('stage:written_test');
+  await expect(status).toHaveValue('written_test_active');
 });
