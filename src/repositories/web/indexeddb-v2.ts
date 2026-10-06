@@ -2,7 +2,7 @@ import { DomainError } from '../../domain/errors.js';
 import { emptySnapshot } from '../../fixtures/acceptance.js';
 import { migrateV1Snapshot } from '../../domain/v2/migration.js';
 import { validateV2Snapshot, type DataSnapshotV2 } from '../../domain/v2/snapshot.js';
-import { estimateJsonUtf8Bytes, type RecoverySnapshotInfo, type SnapshotStoreV2, type VersionedSnapshotV2 } from '../storage-v2-contract.js';
+import { estimateJsonUtf8Bytes, RECOVERY_COPY_LIMIT, type RecoverySnapshotInfo, type SnapshotStoreV2, type VersionedSnapshotV2 } from '../storage-v2-contract.js';
 import type { DataSnapshot } from '../../domain/types.js';
 
 export interface IndexedDbSnapshotStoreV2Options {
@@ -92,6 +92,14 @@ export function createIndexedDbSnapshotStoreV2(options: IndexedDbSnapshotStoreV2
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(new DomainError('STORAGE', request.error?.message ?? '本地存储操作失败'));
   });
+  /** Keeps the newest automatic copies; runs inside the transaction that added one. */
+  const pruneRecoveryCopies = async (recovery: IDBObjectStore) => {
+    const keys = await requestValue(recovery.getAllKeys());
+    const automatic = keys
+      .filter((key): key is string => typeof key === 'string' && /^restore-v2-\d+$/.test(key))
+      .sort((left, right) => Number(right.slice('restore-v2-'.length)) - Number(left.slice('restore-v2-'.length)));
+    for (const key of automatic.slice(RECOVERY_COPY_LIMIT)) recovery.delete(key);
+  };
   const transact = async <T>(mode: IDBTransactionMode, fn: (tx: IDBTransaction) => Promise<T>, stores = [SNAPSHOT_STORE, META_STORE]): Promise<T> => {
     requireOpen(); const db = await open(); requireOpen();
     const tx = db.transaction(stores, mode);
@@ -146,6 +154,7 @@ export function createIndexedDbSnapshotStoreV2(options: IndexedDbSnapshotStoreV2
         // The recovery copy and replacement share this transaction: neither can
         // commit without the other, and a stale restore cannot create a copy.
         tx.objectStore(RECOVERY_STORE).add({ revision: current.revision, schemaVersion: 2, data: structuredClone(current.data) }, `restore-v2-${current.revision}`);
+        await pruneRecoveryCopies(tx.objectStore(RECOVERY_STORE));
         const revision = current.revision + 1;
         snapshots.put({ revision, data: structuredClone(nextData) }, CURRENT_KEY);
         tx.objectStore(META_STORE).put({ schemaVersion: 2, physicalVersion: DB_VERSION, revision }, META_KEY);
@@ -199,6 +208,7 @@ export function createIndexedDbSnapshotStoreV2(options: IndexedDbSnapshotStoreV2
         if (displacedId === recoveryId) throw new DomainError('VALIDATION', '不能将当前恢复副本再次覆盖为自身');
         const revision = current.revision + 1;
         recovery.add({ revision: current.revision, schemaVersion: 2, data: structuredClone(current.data) }, displacedId);
+        await pruneRecoveryCopies(recovery);
         snapshots.put({ revision, data: structuredClone(selected.data) }, CURRENT_KEY);
         tx.objectStore(META_STORE).put({ schemaVersion: 2, physicalVersion: DB_VERSION, revision }, META_KEY);
         return revision;

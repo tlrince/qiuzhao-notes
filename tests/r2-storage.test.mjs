@@ -103,3 +103,25 @@ test('R2 v2 内存与 IndexedDB 共用 revision CAS 和整快照校验契约', a
   assert.equal(memoryRead.data.schemaVersion, webRead.data.schemaVersion);
   await memory.close(); await web.close();
 });
+
+test('R2 automatic recovery copies keep only the newest five in memory and IndexedDB; the v1 copy stays', async () => {
+  const factory = new FDBFactory();
+  const dbName = name();
+  await seedV1(factory, dbName, acceptanceSnapshot());
+  const migrated = migrateV1Snapshot(acceptanceSnapshot(), { migratedAt: now() });
+  const stores = [createMemorySnapshotStoreV2(migrated), createIndexedDbSnapshotStoreV2({ indexedDB: factory, dbName, migrationNow: now })];
+  for (const store of stores) {
+    let { revision, data } = await store.read();
+    for (let index = 0; index < 7; index += 1) revision = await store.restore(revision, data);
+    const automatic = (await store.listRecoverySnapshots()).filter(item => item.id.startsWith('restore-v2-'));
+    assert.equal(automatic.length, 5);
+    assert.deepEqual(automatic.map(item => item.sourceRevision), [revision - 1, revision - 2, revision - 3, revision - 4, revision - 5]);
+    const oldest = automatic.at(-1);
+    revision = await store.restoreRecoverySnapshot(revision, oldest.id);
+    assert.equal((await store.listRecoverySnapshots()).filter(item => item.id.startsWith('restore-v2-')).length, 5);
+    await store.close();
+  }
+  const reopened = createIndexedDbSnapshotStoreV2({ indexedDB: factory, dbName, migrationNow: now });
+  assert.ok((await reopened.listRecoverySnapshots()).some(item => item.id === 'v1-7'), '迁移前的 v1 副本不计入上限、不会被清理');
+  await reopened.close();
+});

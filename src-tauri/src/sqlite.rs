@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 pub const PHYSICAL_SCHEMA_VERSION: i64 = 3;
 pub const V1_SNAPSHOT_VERSION: i64 = 1;
 pub const V2_SNAPSHOT_VERSION: i64 = 2;
+/// Automatic copies kept before whole-workspace replacements; older ones are
+/// pruned in the same transaction that stores a new copy.
+pub const RECOVERY_COPY_LIMIT: i64 = 5;
 
 struct ApplicationProjection {
     id: String,
@@ -157,6 +160,7 @@ impl SqliteStorage {
                 ],
             )
             .map_err(|e| e.to_string())?;
+        prune_recovery_copies(&transaction)?;
         commit_data(transaction, current_revision, &data, V2_SNAPSHOT_VERSION)
     }
 
@@ -324,6 +328,7 @@ impl SqliteStorage {
                 ],
             )
             .map_err(|e| e.to_string())?;
+        prune_recovery_copies(&transaction)?;
         commit_data(transaction, current_revision, &data, V2_SNAPSHOT_VERSION)
     }
 
@@ -421,6 +426,16 @@ impl SqliteStorage {
         })
         .transpose()
     }
+}
+
+fn prune_recovery_copies(transaction: &Transaction<'_>) -> Result<(), String> {
+    transaction
+        .execute(
+            "DELETE FROM snapshot_restore_recovery WHERE source_revision NOT IN (SELECT source_revision FROM snapshot_restore_recovery ORDER BY source_revision DESC LIMIT ?1)",
+            params![RECOVERY_COPY_LIMIT],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn migrate_connection_if_needed(mut connection: Connection) -> Result<(i64, Value), String> {
@@ -2274,5 +2289,51 @@ mod tests {
             })
             .unwrap();
         assert_eq!(persisted, bad);
+    }
+
+    #[test]
+    fn restores_keep_only_the_newest_recovery_copies() {
+        let dir = tempdir().unwrap();
+        let storage = SqliteStorage::open(dir.path().join("prune.sqlite")).unwrap();
+        let mut revision = storage.commit_snapshot_v2(0, v2_snapshot()).unwrap();
+        for _ in 0..7 {
+            revision = storage
+                .restore_snapshot_v2(revision, v2_snapshot())
+                .unwrap();
+        }
+        let copies = storage.read_recovery_snapshots_v2().unwrap();
+        let revisions: Vec<i64> = copies
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|copy| copy["id"].as_str().unwrap().starts_with("restore-v2-"))
+            .map(|copy| copy["sourceRevision"].as_i64().unwrap())
+            .collect();
+        assert_eq!(revisions, vec![7, 6, 5, 4, 3]);
+
+        let (current, _) = storage.read_snapshot_v2().unwrap();
+        let restored = storage
+            .restore_recovery_snapshot_v2(current, "restore-v2-3", v2_snapshot(), v2_snapshot())
+            .unwrap();
+        assert_eq!(restored, current + 1);
+        let after = storage.read_recovery_snapshots_v2().unwrap();
+        let ids: Vec<&str> = after
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|copy| copy["id"].as_str().unwrap())
+            .collect();
+        // The pre-migration v1 copy is kept separately and never pruned.
+        assert_eq!(
+            ids,
+            vec![
+                "restore-v2-8",
+                "restore-v2-7",
+                "restore-v2-6",
+                "restore-v2-5",
+                "restore-v2-4",
+                "v1-0"
+            ]
+        );
     }
 }

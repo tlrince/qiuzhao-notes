@@ -16,6 +16,12 @@ export interface RecoverySnapshotInfo {
   estimatedJsonBytes: number;
 }
 
+/**
+ * Automatic copies taken before a whole-workspace replacement (restore, import, sync).
+ * Only the newest ones are kept; older copies are pruned in the same transaction.
+ */
+export const RECOVERY_COPY_LIMIT = 5;
+
 /** Estimates serialized JSON payload size; this is not the database's physical disk usage. */
 export function estimateJsonUtf8Bytes(value: unknown): number {
   const json = JSON.stringify(value);
@@ -44,6 +50,10 @@ export function createMemorySnapshotStoreV2(seed: DataSnapshotV2): SnapshotStore
   let current: VersionedSnapshotV2 = { revision: 0, data: structuredClone(seed) };
   const recovery = new Map<string, { sourceRevision: number; sourceSchemaVersion: 1 | 2; data: DataSnapshotV2 }>();
   let closed = false;
+  const pruneRecovery = () => {
+    const automatic = [...recovery.entries()].filter(([id]) => id.startsWith('restore-v2-')).sort(([, left], [, right]) => right.sourceRevision - left.sourceRevision);
+    for (const [id] of automatic.slice(RECOVERY_COPY_LIMIT)) recovery.delete(id);
+  };
   const requireOpen = () => { if (closed) throw new DomainError('STORAGE', '存储已关闭'); };
   return {
     async read() { requireOpen(); return structuredClone(current); },
@@ -63,6 +73,7 @@ export function createMemorySnapshotStoreV2(seed: DataSnapshotV2): SnapshotStore
       const id = `restore-v2-${current.revision}`;
       if (recovery.has(id)) throw new DomainError('STORAGE', '恢复副本编号重复，当前快照未替换');
       recovery.set(id, { sourceRevision: current.revision, sourceSchemaVersion: 2, data: structuredClone(current.data) });
+      pruneRecovery();
       current = { revision: current.revision + 1, data: structuredClone(nextData) };
       return current.revision;
     },
@@ -89,6 +100,7 @@ export function createMemorySnapshotStoreV2(seed: DataSnapshotV2): SnapshotStore
       const displacedId = `restore-v2-${current.revision}`;
       if (recovery.has(displacedId)) throw new DomainError('STORAGE', '恢复副本编号重复，当前快照未替换');
       recovery.set(displacedId, { sourceRevision: current.revision, sourceSchemaVersion: 2, data: structuredClone(current.data) });
+      pruneRecovery();
       current = { revision: current.revision + 1, data: structuredClone(recoveryItem.data) };
       return current.revision;
     },
