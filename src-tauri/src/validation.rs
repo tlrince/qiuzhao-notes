@@ -81,7 +81,13 @@ pub fn valid_route(route: &str) -> bool {
     let path = route.split('?').next().unwrap_or("");
     if matches!(
         path,
-        "/overview" | "/applications" | "/board" | "/analytics" | "/settings" | "/design-system"
+        "/overview"
+            | "/applications"
+            | "/board"
+            | "/analytics"
+            | "/settings"
+            | "/settings/definitions"
+            | "/design-system"
     ) {
         return true;
     }
@@ -117,6 +123,7 @@ mod tests {
             "/analytics",
             "/applications/job-123?stage=applied",
             "/settings",
+            "/settings/definitions",
         ] {
             assert!(valid_route(value));
         }
@@ -127,6 +134,7 @@ mod tests {
             "/applications/../settings",
             "/applications/%2fetc",
             "/settings#x",
+            "/settings/unknown",
         ] {
             assert!(!valid_route(value));
         }

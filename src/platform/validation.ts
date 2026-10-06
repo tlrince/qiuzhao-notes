@@ -16,5 +16,5 @@ export function validateBackupName(name: string): void {
   if (!name.trim() || name.length > 180 || /[\u0000-\u001f\u007f/\\:]/u.test(name) || name === '.' || name === '..') throw new DomainError('VALIDATION', '备份文件名无效');
 }
 export function validateRoute(route: string): void {
-  if (route.length > 2048 || /[\\\u0000-\u0020\u007f]/u.test(route) || !/^\/(analytics|overview|applications(?:\/[A-Za-z0-9_-]+)?|board|settings|design-system)(?:\?[^#]*)?$/u.test(route)) throw new DomainError('VALIDATION', '应用路由无效');
+  if (route.length > 2048 || /[\\\u0000-\u0020\u007f]/u.test(route) || !/^\/(analytics|overview|applications(?:\/[A-Za-z0-9_-]+)?|board|settings(?:\/definitions)?|design-system)(?:\?[^#]*)?$/u.test(route)) throw new DomainError('VALIDATION', '应用路由无效');
 }
