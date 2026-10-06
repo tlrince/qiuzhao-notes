@@ -96,8 +96,9 @@
 .applications-v2__table td { padding: 0.7rem 0.75rem; border-bottom: 1px solid #e8e7df; text-align: left; vertical-align: middle; }
 .applications-v2__table thead th { position: sticky; top: 0; z-index: 1; background: #f7f6f0; color: #62665a; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .applications-v2__table tbody tr { cursor: pointer; }
-.applications-v2__table tbody tr:hover,
-.applications-v2__table tbody tr:focus-visible { background: #efece3; outline: none; }
+.applications-v2__table tbody tr:hover { background: #f1eee6; }
+.applications-v2__table tbody tr:active { background: #e9e5da; }
+.applications-v2__table tbody tr:focus { outline: none; }
 .applications-v2__table tbody tr:last-child th,
 .applications-v2__table tbody tr:last-child td { border-bottom: 0; }
 .applications-v2__table td small { display: block; margin-top: 0.2rem; color: var(--applications-muted); font-size: 12px; }

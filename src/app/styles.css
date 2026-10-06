@@ -37,7 +37,8 @@ h3 { font-size: 14px; font-weight: 500; }
 p { line-height: 1.8; }
 .sidebar { width: 216px; position: fixed; inset: 0 auto 0 0; background: var(--color-sidebar); border-right: 1px solid var(--color-border); padding: 36px 18px 22px; display: flex; flex-direction: column; overflow-y: auto; z-index: 5; }
 .brand { display: flex; gap: 10px; align-items: center; padding: 0 10px; }
-.brand-symbol { color: #fff; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(145deg, #14b8a6, #0f766e); box-shadow: 0 2px 6px rgba(15, 118, 110, .25); }
+.brand-symbol { display: grid; place-items: center; width: 36px; height: 36px; }
+.brand-symbol svg { width: 100%; height: 100%; }
 .brand-name { font-family: var(--font-sans); font-size: 19px; font-weight: 650; letter-spacing: .04em; white-space: nowrap; }
 .brand-name span { display: block; font: 12px var(--font-sans); letter-spacing: .2em; margin-top: 5px; }
 .season-picker { margin: 39px 6px 24px; }
