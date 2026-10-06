@@ -95,7 +95,8 @@ test('关键字段、原始记录与状态更新时间被保留或规范映射',
   assert.equal(application.role, '后端工程师');
   assert.equal(application.city, '上海');
   assert.equal(application.channelId, 'official');
-  assert.equal(application.jobUrl, 'https://jobs.example.com/apply?id=123');
+  assert.equal(application.trackingUrl, 'https://jobs.example.com/apply?id=123', '原表链接是投递状态页');
+  assert.equal(application.jobUrl, '');
   assert.equal(application.isStarred, true);
   assert.match(application.notes, /源备注 full/);
   assert.match(application.notes, /源记录 ID=full/);
@@ -122,6 +123,7 @@ test('待投递保留源 applyDate，但不会让草稿违反 v2 无投递日期
 test('非 HTTP 原链接文本安全保留在备注中，不伪造成可点击网址或丢弃整条记录', () => {
   const result = parse([sourceRow('text-link', '已投递', { link: '微信公众号' })]);
   assert.deepEqual(result.issues, []);
+  assert.equal(result.applications[0].application.trackingUrl, '');
   assert.equal(result.applications[0].application.jobUrl, '');
   assert.match(result.applications[0].application.notes, /原链接文本=微信公众号/);
   assert.equal(result.applications[0].sourceRecord.link, '微信公众号');

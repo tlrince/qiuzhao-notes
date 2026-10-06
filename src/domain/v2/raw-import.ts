@@ -71,7 +71,8 @@ interface ParsedSourceRow {
   position: string;
   city: string;
   channelName: string;
-  jobUrl: string;
+  /** The source `link` column holds the personal application-status page. */
+  trackingUrl: string;
   applyDate: string | null;
   sourceStatus: string;
   createdAt: string;
@@ -157,16 +158,16 @@ function parseRow(value: unknown, index: number): ParsedSourceRow {
     ? updatedAt
     : normalizedInstant(row.statusUpdatedAt, 'statusUpdatedAt');
   const link = text(row.link);
-  let jobUrl = '';
+  let trackingUrl = '';
   let unlinkedText = '';
   if (link) {
-    try { jobUrl = validateExternalUrl(link); }
+    try { trackingUrl = validateExternalUrl(link); }
     catch { unlinkedText = link; }
   }
   const note = text(row.note);
   const isStarred = text(row.priority) === '高';
   return {
-    sourceId, company, position, city: text(row.location), channelName, jobUrl,
+    sourceId, company, position, city: text(row.location), channelName, trackingUrl,
     applyDate, sourceStatus, createdAt, updatedAt, statusUpdatedAt,
     note, isStarred, notes: extraNotes(row, note, unlinkedText), sourceRecord: structuredClone(row),
   };
@@ -202,8 +203,8 @@ function makeImportedRow(
     role: source.position,
     city: source.city,
     channelId: channel.id,
-    jobUrl: source.jobUrl,
-    trackingUrl: '',
+    jobUrl: '',
+    trackingUrl: source.trackingUrl,
     appliedOn: null,
     currentStatusId: initialStatus.id,
     currentStage: null,

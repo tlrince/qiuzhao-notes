@@ -191,7 +191,7 @@ function SheetRow({ item, props }: { item: SheetItem; props: ApplicationSheetPro
             onCorrect={event => props.onHistoryAction(item, { kind: 'correct', eventId: event.id })}
           />
           <div className="sheet__detail-links">
-            {application.jobUrl && <span>职位页：<button type="button" className="sheet__url" onClick={() => { const url = safeHttpUrl(application.jobUrl); if (url) props.onOpenUrl(url); }}>{shortUrl(application.jobUrl)}</button></span>}
+            {application.jobUrl && <span>岗位 JD：<button type="button" className="sheet__url" onClick={() => { const url = safeHttpUrl(application.jobUrl); if (url) props.onOpenUrl(url); }}>{shortUrl(application.jobUrl)}</button></span>}
             {application.trackingUrl && <span>进度页：<button type="button" className="sheet__url" onClick={() => { const url = safeHttpUrl(application.trackingUrl); if (url) props.onOpenUrl(url); }}>{shortUrl(application.trackingUrl)}</button></span>}
             <button type="button" className="sheet__mini" onClick={() => props.onEdit(item)}><Icon name="edit" size={12} />编辑详情、日程</button>
           </div>

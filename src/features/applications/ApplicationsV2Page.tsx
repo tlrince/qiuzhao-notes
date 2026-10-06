@@ -159,7 +159,7 @@ export function ApplicationsV2Page({ seasonId }: { seasonId: string | null }) {
         <table className="applications-v2__table">
           <caption>{season.name}的投递记录</caption>
           <thead><tr>
-            <th scope="col">公司 / 岗位</th><th scope="col">城市 / 渠道</th><th scope="col">投递状态</th><th scope="col">投递日期</th><th scope="col">关注</th><th scope="col">投递进度页</th><th scope="col">职位页</th>
+            <th scope="col">公司 / 岗位</th><th scope="col">城市 / 渠道</th><th scope="col">投递状态</th><th scope="col">投递日期</th><th scope="col">关注</th><th scope="col">投递进度</th><th scope="col">岗位 JD</th>
           </tr></thead>
           <tbody>
             {applications.map(application => {
@@ -173,7 +173,7 @@ export function ApplicationsV2Page({ seasonId }: { seasonId: string | null }) {
                 <td>{progress?.appliedOn ?? application.appliedOn ?? <span className="applications-v2__muted">未投递</span>}</td>
                 <td><button type="button" className={`applications-v2__star${application.isStarred ? ' applications-v2__star--active' : ''}`} aria-pressed={application.isStarred} aria-label={application.isStarred ? '取消关注' : '关注这条投递'} onClick={event => { event.stopPropagation(); toggleStar(application); }}>{application.isStarred ? '★' : '☆'}</button></td>
                 <td onClick={event => event.stopPropagation()}><ExternalLink value={application.trackingUrl} label="打开进度页" onOpen={url => void actions.openUrl(url)} /></td>
-                <td onClick={event => event.stopPropagation()}><ExternalLink value={application.jobUrl} label="打开职位页" onOpen={url => void actions.openUrl(url)} /></td>
+                <td onClick={event => event.stopPropagation()}><ExternalLink value={application.jobUrl} label="打开 JD" onOpen={url => void actions.openUrl(url)} /></td>
               </tr>;
             })}
             {applications.length === 0 && <tr><td colSpan={7} className="applications-v2__empty-row"><h2>{query.trim() ? '没有匹配结果' : '这个招聘季还没有投递'}</h2><p>{query.trim() ? '试试其他公司、岗位或城市关键词。' : '新增一条投递，记录公司、岗位和当前状态。'}</p>{!query.trim() && <button type="button" onClick={() => setCreating(true)} disabled={activeChannels.length === 0}>＋ 新增投递</button>}</td></tr>}

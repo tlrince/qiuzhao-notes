@@ -229,8 +229,8 @@ function ApplicationFieldsForm({ application, onSave }: { application: Applicati
     <label><span>投递渠道</span><select required value={fields.channelId} onChange={event => update('channelId', event.target.value)}>
       {channels.map(channel => <option key={channel.id} value={channel.id}>{channel.name}{channel.archivedAt ? '（已归档）' : ''}</option>)}
     </select></label>
-    <label><span>职位页链接</span><input inputMode="url" placeholder="https://…" value={fields.jobUrl} onChange={event => update('jobUrl', event.target.value)} /></label>
-    <label><span>投递进度链接（招聘系统个人中心）</span><input inputMode="url" placeholder="https://…" value={fields.trackingUrl} onChange={event => update('trackingUrl', event.target.value)} /></label>
+    <label><span>投递进度链接（状态页）</span><input inputMode="url" placeholder="https://…" value={fields.trackingUrl} onChange={event => update('trackingUrl', event.target.value)} /></label>
+    <label><span>岗位 JD 链接</span><input inputMode="url" placeholder="https://…" value={fields.jobUrl} onChange={event => update('jobUrl', event.target.value)} /></label>
     <label className="applications-v2__check"><input type="checkbox" checked={fields.isStarred} onChange={event => update('isStarred', event.target.checked)} /><span>关注这条投递</span></label>
     <label className="applications-v2__notes"><span>备注</span><textarea rows={3} value={fields.notes} onChange={event => update('notes', event.target.value)} /></label>
     {error && <p className="applications-v2__error" role="alert">{error}</p>}
@@ -267,8 +267,8 @@ export function ApplicationDetailDrawer({ applicationId, onClose, notice }: { ap
         <div><span>当前状态</span><strong>{status?.name ?? '未知状态'}</strong></div>
         <div><span>投递日期</span><strong>{progress.appliedOn ?? '尚未投递'}</strong></div>
         <div><span>渠道</span><strong>{channel?.name ?? '未知渠道'}</strong></div>
-        <div><span>职位页</span><ExternalLink value={application.jobUrl} label="打开职位页" onOpen={url => void actions.openUrl(url)} /></div>
         <div><span>投递进度页</span><ExternalLink value={application.trackingUrl} label="打开进度页" onOpen={url => void actions.openUrl(url)} /></div>
+        <div><span>岗位 JD</span><ExternalLink value={application.jobUrl} label="打开 JD" onOpen={url => void actions.openUrl(url)} /></div>
       </section>
       <section className="applications-v2__detail-section">
         <h3>基本信息</h3>
@@ -415,8 +415,8 @@ export function CreateApplicationDrawer({ open, seasonId, onClose, notice, onCre
             <label><span>投递渠道</span><select required value={fields.channelId} onChange={event => update('channelId', event.target.value)}>
               {activeChannels.map(channel => <option key={channel.id} value={channel.id}>{channel.name}</option>)}
             </select></label>
-            <label><span>投递链接</span><input inputMode="url" placeholder="https://…" value={fields.jobUrl} onChange={event => update('jobUrl', event.target.value)} /></label>
-            <label><span>投递进度链接（可选）</span><input inputMode="url" placeholder="招聘系统个人中心 https://…" value={fields.trackingUrl} onChange={event => update('trackingUrl', event.target.value)} /></label>
+            <label><span>投递进度链接（状态页）</span><input inputMode="url" placeholder="官网个人中心 / 投递记录页 https://…" value={fields.trackingUrl} onChange={event => update('trackingUrl', event.target.value)} /></label>
+            <label><span>岗位 JD 链接（可选）</span><input inputMode="url" placeholder="https://…" value={fields.jobUrl} onChange={event => update('jobUrl', event.target.value)} /></label>
             <label className="applications-v2__notes"><span>备注</span><textarea rows={3} value={fields.notes} onChange={event => update('notes', event.target.value)} placeholder="面试进展、笔试题型、联系人、复盘……" /></label>
             <label className="applications-v2__check"><input type="checkbox" checked={fields.isStarred} onChange={event => update('isStarred', event.target.checked)} /><span>关注这条投递</span></label>
             {error && <p className="applications-v2__error" role="alert">{error}</p>}

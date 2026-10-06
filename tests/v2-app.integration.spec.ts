@@ -65,7 +65,7 @@ test('empty v1 browser database migrates on cold start and v2 data is shared acr
   const createDialog = page.getByRole('dialog', { name: '新增投递' });
   await expect(createDialog).toBeVisible();
   await createDialog.getByLabel('公司').fill(TEST_COMPANY);
-  await createDialog.getByLabel('岗位').fill(TEST_ROLE);
+  await createDialog.getByLabel('岗位 *', { exact: true }).fill(TEST_ROLE);
   await createDialog.getByLabel('当前状态').selectOption('draft');
   await createDialog.getByRole('button', { name: '保存' }).click();
   await expect(page.getByText(`已添加「${TEST_COMPANY} · ${TEST_ROLE}」`)).toBeVisible();
@@ -188,7 +188,7 @@ test('M3 raw JSON import syncs without deleting, and can still replace only the 
   await page.getByRole('button', { name: /新增投递/ }).first().click();
   const createDialog = page.getByRole('dialog', { name: '新增投递' });
   await createDialog.getByLabel('公司').fill('应被替换的旧记录');
-  await createDialog.getByLabel('岗位').fill('测试岗位');
+  await createDialog.getByLabel('岗位 *', { exact: true }).fill('测试岗位');
   await createDialog.getByRole('button', { name: '保存' }).click();
   await expect(page.getByText('已添加「应被替换的旧记录 · 测试岗位」')).toBeVisible();
 
