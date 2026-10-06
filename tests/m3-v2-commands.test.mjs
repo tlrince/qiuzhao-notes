@@ -211,3 +211,26 @@ test('校验失败、陈旧 revision 和并发写入均不产生部分更新', a
   assert.equal(race.filter(result => result.status === 'rejected' && result.reason.code === 'CONFLICT').length, 1);
   assert.equal((await appState(store)).revision, current.revision + 1);
 });
+
+test('creation can record the submission and a later status in the same transaction', async () => {
+  const { store, commands } = makeCommands();
+  const before = await store.read();
+  const created = await commands.createApplication({
+    ...newApplicationInput,
+    expectedRevision: before.revision,
+    initialProgress: { submittedOn: '2026-09-10', statusId: 'written_test_active', occurredOn: '2026-09-12' },
+  });
+  assert.equal(created.revision, before.revision + 1, '一次提交');
+  const after = await store.read();
+  const application = after.data.applications.find(item => item.id === created.value.id);
+  const progress = after.data.progressRecords.find(item => item.applicationId === created.value.id);
+  assert.equal(application.appliedOn, '2026-09-10');
+  assert.equal(application.currentStatusId, 'written_test_active');
+  assert.deepEqual(progress.events.map(event => [event.statusId, event.occurredOn]), [['submitted', '2026-09-10'], ['written_test_active', '2026-09-12']]);
+  assert.doesNotThrow(() => validateV2Snapshot(after.data));
+
+  const failed = await commands.createApplication({ ...newApplicationInput, expectedRevision: after.revision, initialProgress: { submittedOn: '2026-09-10', statusId: 'failed_unknown', failedAt: 'unknown' } });
+  assert.equal(failed.value.outcome, 'failed');
+  await assert.rejects(commands.createApplication({ ...newApplicationInput, expectedRevision: failed.revision, initialProgress: { submittedOn: '2026-09-10', statusId: 'written_test_active', occurredOn: '2026-09-01' } }), /日期/);
+  assert.equal((await store.read()).revision, failed.revision, '日期倒序时不写入');
+});

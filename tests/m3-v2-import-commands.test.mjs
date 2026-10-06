@@ -159,3 +159,27 @@ test('重复渠道 ID 造成映射歧义时拒绝写入', async () => {
   const rows = await imported(store, [sourceRow('ambiguous-channel')]);
   await assertNoWrite(store, ambiguous, () => commands.replaceSeasonApplications({ expectedRevision: ambiguous.revision, seasonId: '2026-autumn', applications: rows.applications }));
 });
+
+test('syncing a re-exported file adds rows and newer statuses without deleting anything', async () => {
+  const { store, recovery } = fixture();
+  let serial = 0;
+  const commands = createImportCommands(store, { id: () => `sync-${++serial}` });
+  const before = await store.read();
+  const first = await commands.syncSeasonApplications({ expectedRevision: before.revision, seasonId: '2026-autumn', source: JSON.stringify([sourceRow('sync-a', '筛选中')]) });
+  assert.equal(first.changed, true);
+  assert.equal(first.plan.additions.length, 1);
+  const afterFirst = await store.read();
+  assert.equal(afterFirst.data.applications.length, before.data.applications.length + 1, '原有投递全部保留');
+  assert.equal(recovery.length, 1, '同步前的快照留作恢复副本');
+
+  const later = { ...sourceRow('sync-a', '挂掉'), statusUpdatedAt: '2026-09-20T10:00:00+08:00', updatedAt: '2026-09-20T10:00:00+08:00' };
+  const second = await commands.syncSeasonApplications({ expectedRevision: afterFirst.revision, seasonId: '2026-autumn', source: [later] });
+  assert.equal(second.plan.statusUpdates.length, 1);
+  const synced = (await store.read()).data.applications.find(item => item.id === 'raw-import-sync-a');
+  assert.equal(synced.outcome, 'failed');
+
+  const third = await commands.syncSeasonApplications({ expectedRevision: second.revision, seasonId: '2026-autumn', source: [later] });
+  assert.equal(third.changed, false, '没有新内容时不写入');
+  assert.equal(third.revision, second.revision);
+  await assert.rejects(commands.syncSeasonApplications({ expectedRevision: second.revision - 1, seasonId: '2026-autumn', source: [later] }), { code: 'CONFLICT' });
+});

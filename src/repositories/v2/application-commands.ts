@@ -39,6 +39,16 @@ export interface CreateApplicationCommandInput {
   trackingUrl?: string;
   isStarred?: boolean;
   notes?: string;
+  /**
+   * Optional first progress written in the same transaction: the submission, and
+   * optionally a later current status. Omit it to create an empty draft.
+   */
+  initialProgress?: {
+    submittedOn: string;
+    statusId?: string;
+    occurredOn?: string;
+    failedAt?: { stageId: string } | 'unknown';
+  };
 }
 
 export interface ApplicationCommandResult<T> {
@@ -170,8 +180,22 @@ export function createApplicationCommands(
           createdAt: timestamp,
           updatedAt: timestamp,
         };
+        let progress = createProgressRecord(applicationId);
+        if (input.initialProgress) {
+          const initial = input.initialProgress;
+          const submittedStatus = snapshot.definitions.statuses
+            .filter(status => status.semantic === 'submitted' && status.archivedAt === null)
+            .sort((left, right) => left.sortOrder - right.sortOrder)[0];
+          requireRule(!!submittedStatus, '没有可用的「已投递」状态，无法记录投递');
+          const append = (statusId: string, occurredOn: string, suffix: string, failedAt?: { stageId: string } | 'unknown') => {
+            progress = appendProgressEvent(progress, snapshot.definitions, { commandId: `create:${applicationId}:${suffix}`, statusId, occurredOn, ...(failedAt === undefined ? {} : { failedAt }) }, { now: timestamp, id }).record;
+          };
+          append(submittedStatus.id, initial.submittedOn, 'submitted');
+          if (initial.statusId && initial.statusId !== submittedStatus.id) append(initial.statusId, initial.occurredOn ?? initial.submittedOn, 'status', initial.failedAt);
+        }
         snapshot.applications.push(application);
-        snapshot.progressRecords.push(createProgressRecord(applicationId));
+        snapshot.progressRecords.push(progress);
+        syncApplicationWithProgress(application, progress);
         return application;
       });
     },

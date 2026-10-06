@@ -1,6 +1,6 @@
 import { DomainError, requireRule } from '../../domain/errors.js';
 import { validateV2Snapshot, type DataSnapshotV2 } from '../../domain/v2/snapshot.js';
-import type { ImportedApplicationV2 } from '../../domain/v2/raw-import.js';
+import { applyRawImportSync, planRawImportSync, type ImportedApplicationV2, type RawImportSyncPlan } from '../../domain/v2/raw-import.js';
 import type { SnapshotStoreV2 } from '../storage-v2-contract.js';
 
 export interface ReplaceSeasonApplicationsInput {
@@ -16,9 +16,18 @@ export interface ReplaceSeasonApplicationsResult {
   importedApplicationCount: number;
 }
 
+export interface SyncSeasonApplicationsResult {
+  revision: number;
+  plan: RawImportSyncPlan;
+  /** False when the file brought nothing new, so nothing was written. */
+  changed: boolean;
+}
+
 export interface ImportCommands {
   /** Replaces one season's applications atomically, retaining the displaced full snapshot for recovery. */
   replaceSeasonApplications(input: ReplaceSeasonApplicationsInput): Promise<ReplaceSeasonApplicationsResult>;
+  /** Adds new rows and newer statuses from a re-exported raw JSON without deleting anything. */
+  syncSeasonApplications(input: { expectedRevision: number; seasonId: string; source: unknown }): Promise<SyncSeasonApplicationsResult>;
 }
 
 function assertExpectedRevision(expectedRevision: number, actualRevision: number): void {
@@ -78,8 +87,20 @@ function assertImportedRows(snapshot: DataSnapshotV2, seasonId: string, rows: Im
   requireRule(applicationIds.size === rows.length, '导入投递 ID 重复');
 }
 
-export function createImportCommands(store: SnapshotStoreV2): ImportCommands {
+export function createImportCommands(store: SnapshotStoreV2, context: { id?: () => string } = {}): ImportCommands {
+  const id = context.id ?? (() => globalThis.crypto.randomUUID());
   return {
+    async syncSeasonApplications(input) {
+      const stored = await store.read();
+      assertExpectedRevision(input.expectedRevision, stored.revision);
+      const plan = planRawImportSync(stored.data, input.source, { seasonId: input.seasonId });
+      if (plan.issues.length) throw new DomainError('VALIDATION', `同步预览有 ${plan.issues.length} 条问题，未写入数据`);
+      if (!plan.additions.length && !plan.statusUpdates.length) return { revision: stored.revision, plan, changed: false };
+      const next = applyRawImportSync(stored.data, plan, { id });
+      // A sync rewrites many records at once, so keep the displaced snapshot for recovery.
+      const revision = await store.restore(input.expectedRevision, next);
+      return { revision, plan, changed: true };
+    },
     async replaceSeasonApplications(input) {
       const stored = await store.read();
       assertExpectedRevision(input.expectedRevision, stored.revision);
