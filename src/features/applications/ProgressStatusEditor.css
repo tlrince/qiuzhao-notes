@@ -63,7 +63,7 @@
 .progress-status-editor__field select:focus-visible,
 .progress-status-editor__field textarea:focus-visible,
 .progress-status-editor__actions button:focus-visible {
-  outline: 2px solid #ac6549;
+  outline: 2px solid #0f766e;
   outline-offset: 2px;
 }
 
@@ -100,8 +100,8 @@
 }
 
 .progress-status-editor__actions button[type='submit'] {
-  border-color: #ac6549;
-  background: #ac6549;
+  border-color: #0f766e;
+  background: #0f766e;
   color: #fff;
 }
 

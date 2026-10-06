@@ -158,7 +158,7 @@ function SheetRow({ item, props }: { item: SheetItem; props: ApplicationSheetPro
       <td className="sheet__next">{nextSchedule
         ? <span className={overdue ? 'sheet__overdue' : undefined} title={nextSchedule.notes || nextSchedule.title}>{overdue ? '已逾期 · ' : ''}{localStamp(nextSchedule.startsAt).slice(5)} · {nextSchedule.title}</span>
         : <span className="sheet__muted">—</span>}</td>
-      <td>{application.city || <span className="sheet__muted">—</span>}</td>
+      <td className="sheet__cities">{item.cities.length ? item.cities.map(city => <span key={city} className="sheet__city">{city}</span>) : <span className="sheet__muted">—</span>}</td>
       <td className="sheet__link">{href
         ? <div className="sheet__link-inner"><button type="button" className="sheet__url" title={href} onClick={() => props.onOpenUrl(href)}>{shortUrl(href)}</button><button type="button" className="sheet__mini" onClick={() => props.onCopy(href, '投递链接')}><Icon name="copy" size={12} />复制</button></div>
         : link ? <span className="sheet__muted" title={link}>{link}</span> : <span className="sheet__muted">—</span>}</td>

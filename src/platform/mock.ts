@@ -1,9 +1,9 @@
-import type { BackupSaveResult, PlatformKind, PlatformServices, WindowAction } from './contracts.js';
+import type { BackupSaveResult, MenuAction, PlatformKind, PlatformServices, WindowAction } from './contracts.js';
 import { validateBackupName, validateBackupSize, validateExternalUrl, validateRoute } from './validation.js';
 export function createMockPlatform(options: { kind?: PlatformKind; file?: string | null; saveResult?: BackupSaveResult; version?: string } = {}) {
   const kind = options.kind ?? 'web';
   const savedFiles: { name: string; json: string }[] = [], externalUrls: string[] = [], finishedActions: WindowAction[] = [];
-  const windowListeners = new Set<(action: WindowAction) => void>(), navigationListeners = new Set<() => void>();
+  const windowListeners = new Set<(action: WindowAction) => void>(), navigationListeners = new Set<() => void>(), menuListeners = new Set<(action: MenuAction) => void>();
   let route: string | null = null;
   const services: PlatformServices = {
     kind, storageLabel: kind === 'macos' ? '本机' : '此浏览器',
@@ -18,10 +18,12 @@ export function createMockPlatform(options: { kind?: PlatformKind; file?: string
     async loadLastRoute() { return route; }, async saveLastRoute(value) { validateRoute(value); route = value; },
     async subscribeWindowAction(listener) { windowListeners.add(listener); return () => { windowListeners.delete(listener); }; },
     async subscribeSettingsNavigation(listener) { navigationListeners.add(listener); return () => { navigationListeners.delete(listener); }; },
+    async subscribeMenuAction(listener) { menuListeners.add(listener); return () => { menuListeners.delete(listener); }; },
     async finishWindowAction(action) { finishedActions.push(action); },
   };
   return Object.assign(services, { savedFiles, externalUrls, finishedActions,
     emitWindowAction(action: WindowAction) { windowListeners.forEach(listener => listener(action)); },
     emitSettingsNavigation() { navigationListeners.forEach(listener => listener()); },
+    emitMenuAction(action: MenuAction) { menuListeners.forEach(listener => listener(action)); },
   });
 }

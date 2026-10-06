@@ -26,7 +26,7 @@
     "test:r4": "node --experimental-strip-types --test tests/r4-progress-table.test.mjs",
     "test:r5": "node --experimental-strip-types --test tests/r5-progress-history.test.mjs",
     "test:r5-ui": "playwright test tests/r5-v2-app.integration.spec.ts --project=chromium --config=playwright.v2.config.ts",
-    "test:m5v2": "node --experimental-strip-types --test tests/m5-v2-analytics.test.mjs",
+    "test:m5v2": "npm run build:domain && node --test tests/m5-v2-analytics.test.mjs",
     "test:m6v2": "node --experimental-strip-types --test tests/m6-v2-analysis-page.test.mjs",
     "test:m4-manager": "node --experimental-strip-types --test tests/m4-definition-manager-model.test.mjs",
     "test:m8": "npm run build:domain && node --experimental-test-module-mocks --test tests/m8-backup-commands.test.mjs",

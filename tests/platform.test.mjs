@@ -42,6 +42,9 @@ test('窗口生命周期 Mock 可以取消订阅，恢复路由不能指向外�
   platform.emitWindowAction('close'); platform.emitSettingsNavigation(); off(); offNav();
   platform.emitWindowAction('quit'); platform.emitSettingsNavigation();
   assert.deepEqual(actions, ['close']); assert.equal(navigation, 1);
+  const menu = []; const offMenu = await platform.subscribeMenuAction(action => menu.push(action));
+  platform.emitMenuAction('new'); platform.emitMenuAction('find'); offMenu(); platform.emitMenuAction('backup');
+  assert.deepEqual(menu, ['new', 'find']);
   await platform.finishWindowAction('close'); assert.deepEqual(platform.finishedActions, ['close']);
   await platform.saveLastRoute('/applications?stage=submitted'); assert.equal(await platform.loadLastRoute(), '/applications?stage=submitted');
   await assert.rejects(platform.saveLastRoute('https://example.com'), { code: 'VALIDATION' });

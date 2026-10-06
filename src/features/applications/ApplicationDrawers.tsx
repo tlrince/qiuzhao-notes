@@ -9,6 +9,8 @@ import { ConfirmDialog, Drawer } from '../../shared/ui/Dialog.js';
 import { ProgressStatusEditor } from './ProgressStatusEditor.js';
 import { localBusinessDate, type ProgressStatusEditorCommand } from './progress-status-editor.js';
 import { ProgressHistory } from '../progress/ProgressHistory.js';
+import { CityTagsInput } from '../../shared/ui/CityTagsInput.js';
+import { splitCities } from '../../domain/v2/cities.js';
 import { quickStatusOptions } from '../progress/quick-status.js';
 import { normalizeUrlInput, safeExternalHttpUrl, sameRoleApplications } from './applications-page-model.js';
 import './ApplicationsV2Page.css';
@@ -23,6 +25,13 @@ export type Notice = (message: string, tone?: NoticeTone, action?: NoticeAction)
 type ScheduleFields = Pick<Schedule, 'type' | 'title' | 'startsAt' | 'notes'>;
 
 const errorText = (cause: unknown, fallback: string) => cause instanceof Error ? cause.message : fallback;
+
+/** Single cities already used, most frequent first, offered while typing. */
+function citySuggestions(applications: readonly ApplicationV2[]): string[] {
+  const counts = new Map<string, number>();
+  for (const application of applications) for (const city of splitCities(application.city)) counts.set(city, (counts.get(city) ?? 0) + 1);
+  return [...counts.entries()].sort((left, right) => right[1] - left[1]).map(([city]) => city);
+}
 
 function toLocalDateTime(instant: string): string {
   const date = new Date(instant);
@@ -225,7 +234,7 @@ function ApplicationFieldsForm({ application, onSave }: { application: Applicati
   return <form className="applications-v2__form" onSubmit={submit} aria-label="编辑投递基本信息">
     <label><span>公司</span><input required maxLength={160} value={fields.company} onChange={event => update('company', event.target.value)} /></label>
     <label><span>岗位</span><input required maxLength={160} value={fields.role} onChange={event => update('role', event.target.value)} /></label>
-    <label><span>城市</span><input maxLength={100} value={fields.city} onChange={event => update('city', event.target.value)} /></label>
+    <div className="applications-v2__field"><span>城市</span><CityTagsInput label="城市" value={fields.city} onChange={value => update('city', value)} suggestions={citySuggestions(snapshot.applications)} /></div>
     <label><span>投递渠道</span><select required value={fields.channelId} onChange={event => update('channelId', event.target.value)}>
       {channels.map(channel => <option key={channel.id} value={channel.id}>{channel.name}{channel.archivedAt ? '（已归档）' : ''}</option>)}
     </select></label>
@@ -411,7 +420,7 @@ export function CreateApplicationDrawer({ open, seasonId, onClose, notice, onCre
             </select></label>
             {recordsSubmission && <label><span>投递日期</span><input type="date" required value={fields.appliedOn} onChange={event => update('appliedOn', event.target.value)} /></label>}
             {laterStatus && <label><span>「{option?.label}」的日期</span><input type="date" required value={fields.statusOn} onChange={event => update('statusOn', event.target.value)} /><small>会依次记录「已投递」和「{option?.label}」两条进度。</small></label>}
-            <label><span>城市</span><input maxLength={100} value={fields.city} onChange={event => update('city', event.target.value)} placeholder="如：上海" /></label>
+            <div className="applications-v2__field"><span>城市</span><CityTagsInput label="城市" value={fields.city} onChange={value => update('city', value)} suggestions={citySuggestions(snapshot.applications)} /></div>
             <label><span>投递渠道</span><select required value={fields.channelId} onChange={event => update('channelId', event.target.value)}>
               {activeChannels.map(channel => <option key={channel.id} value={channel.id}>{channel.name}</option>)}
             </select></label>

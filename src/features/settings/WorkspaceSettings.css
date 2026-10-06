@@ -1,0 +1,32 @@
+.workspace-settings__list li:has(.workspace-settings__editor) { display: block; }
+.workspace-settings__editor { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); align-items: end; gap: 10px 12px; color: var(--color-ink, #2a2925); font-size: 13px; }
+.workspace-settings__editor label { display: grid; gap: 4px; color: var(--color-muted, #6b675f); font-size: 12px; }
+.workspace-settings__editor input,
+.workspace-settings__inline input { box-sizing: border-box; width: 100%; min-height: 34px; padding: 5px 9px; border: 1px solid var(--color-border, #e5e3da); border-radius: 6px; background: #fff; color: var(--color-ink, #2a2925); font: inherit; font-size: 13px; }
+.workspace-settings__editor-actions { display: flex; justify-content: flex-end; gap: 6px; grid-column: 1 / -1; }
+.workspace-settings__error { grid-column: 1 / -1; margin: 0; color: #b42318; font-size: 13px; }
+
+.workspace-settings__channels { display: grid; gap: 12px; padding: 4px 24px 20px; }
+.workspace-settings__rows,
+.workspace-settings__archived ul { display: grid; margin: 0; padding: 0; list-style: none; }
+.workspace-settings__rows li,
+.workspace-settings__archived li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid #eeece5; color: var(--color-muted, #6b675f); font-size: 13px; }
+.workspace-settings__rows li strong,
+.workspace-settings__archived li strong { color: var(--color-ink, #2a2925); font-weight: 600; }
+.workspace-settings__rows li:last-child,
+.workspace-settings__archived li:last-child { border-bottom: 0; }
+.workspace-settings__inline { display: flex; flex: 1; gap: 6px; align-items: center; }
+.workspace-settings__inline input { flex: 1; min-width: 0; }
+
+.workspace-settings__archived { margin: 0 24px 16px; padding: 10px 14px; border: 1px dashed var(--color-border, #e5e3da); border-radius: 10px; font-size: 13px; }
+.workspace-settings__channels .workspace-settings__archived { margin: 0; }
+.workspace-settings__archived summary { color: var(--color-muted, #6b675f); font-weight: 600; cursor: pointer; }
+.workspace-settings__archived p { margin: 6px 0 2px; color: var(--color-muted, #6b675f); font-size: 12px; }
+
+@media (max-width: 767px) {
+  .workspace-settings__channels { padding-inline: 18px; }
+  .workspace-settings__archived { margin-inline: 18px; }
+}
+.workspace-settings__rows .page-actions,
+.workspace-settings__archived .page-actions { margin: 0; }
+.workspace-settings__row-actions { display: flex; gap: 6px; align-items: center; }

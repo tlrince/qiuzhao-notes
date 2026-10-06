@@ -25,6 +25,10 @@ export function createDesktopPlatform(): PlatformServices {
     async subscribeSettingsNavigation(listener) {
       const { listen } = await import('@tauri-apps/api/event'); return listen('navigate-settings', () => listener());
     },
+    async subscribeMenuAction(listener) {
+      const { listen } = await import('@tauri-apps/api/event');
+      return listen<unknown>('menu-action', ({ payload }) => { if (payload === 'new' || payload === 'backup' || payload === 'restore' || payload === 'find') listener(payload); });
+    },
     async finishWindowAction(action) { await invoke('finish_window_action', { action }); },
   };
 }

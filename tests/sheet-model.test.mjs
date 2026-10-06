@@ -51,20 +51,36 @@ test('stale reminder covers only rows waiting on a status for 14+ days', () => {
 
 test('search, channel and status chips filter like offer.html, with chip counts after search', () => {
   const all = items();
-  assert.equal(sheet.filterSheetItems(all, { search: '星河科技', channelId: sheet.ALL, statusKey: sheet.ALL }).length, 2);
-  assert.equal(sheet.filterSheetItems(all, { search: '正式批', channelId: sheet.ALL, statusKey: sheet.ALL }).length, 1, '搜索备注');
-  assert.deepEqual(sheet.filterSheetItems(all, { search: '', channelId: 'referral', statusKey: sheet.ALL }).map(item => item.row.application.id), ['c']);
-  assert.deepEqual(sheet.filterSheetItems(all, { search: '', channelId: sheet.ALL, statusKey: 'failed' }).map(item => item.row.application.id), ['a']);
+  assert.equal(sheet.filterSheetItems(all, { search: '星河科技', channelId: sheet.ALL, stageKey: sheet.ALL, outcome: sheet.ALL, city: sheet.ALL }).length, 2);
+  assert.equal(sheet.filterSheetItems(all, { search: '正式批', channelId: sheet.ALL, stageKey: sheet.ALL, outcome: sheet.ALL, city: sheet.ALL }).length, 1, '搜索备注');
+  assert.deepEqual(sheet.filterSheetItems(all, { search: '', channelId: 'referral', stageKey: sheet.ALL, outcome: sheet.ALL, city: sheet.ALL }).map(item => item.row.application.id), ['c']);
+  assert.deepEqual(sheet.filterSheetItems(all, { search: '', channelId: sheet.ALL, stageKey: 'failed', outcome: sheet.ALL, city: sheet.ALL }).map(item => item.row.application.id), ['a']);
   const chips = sheet.sheetStatusChips(all, definitions, sheet.ALL);
-  assert.deepEqual(chips.map(chip => [chip.label, chip.count]), [['待投递', 1], ['筛选中', 1], ['一面', 1], ['泡池子', 1], ['挂掉', 1]]);
+  assert.deepEqual(chips.map(chip => [chip.label, chip.count]), [['待投递', 1], ['简历筛选', 1], ['一面', 1], ['泡池子', 1], ['挂掉', 1]]);
   assert.deepEqual(sheet.sheetStatusChips(all.filter(item => item.row.application.company === '远山电子'), definitions, 'failed').map(chip => [chip.key, chip.count]), [['stage:interview_1', 1], ['failed', 0]], '选中的状态即使为 0 也保留');
 });
 
 test('sorting by apply date keeps drafts last; stats count companies like offer.html', () => {
   assert.deepEqual(sheet.sortSheetItems(items(), 'apply-desc').map(item => item.row.application.id), ['c', 'b', 'd', 'a', 'e']);
   assert.deepEqual(sheet.sortSheetItems(items(), 'apply-asc').map(item => item.row.application.id), ['a', 'd', 'b', 'c', 'e']);
-  assert.deepEqual(sheet.sheetStats(items()), { total: 5, companies: 3, active: 2, offers: 0, pool: 1, failed: 1, offerRate: 0 });
+  assert.deepEqual(sheet.sheetStats(items()), { total: 4, drafts: 1, companies: 3, active: 2, offers: 0, pool: 1, failed: 1, offerRate: 0 });
   assert.equal(sheet.companyGroupName('网易游戏雷火'), '网易');
   assert.equal(sheet.companyGroupName('阿里巴巴（淘天）'), '阿里巴巴');
   assert.equal(sheet.displayNotes('正式批\n导入字段：源记录 ID=x'), '正式批');
+});
+
+test('stage chips group every phase and result of a stage; outcome and single-city filters narrow the rows', () => {
+  const data = [
+    application('w', '甲', '工程师', [['submitted', '2026-09-01'], ['interview_1_waiting', '2026-09-02']], { city: '北京、上海' }),
+    application('x', '乙', '工程师', [['submitted', '2026-09-01'], ['interview_1_active', '2026-09-03'], ['interview_1_failed', '2026-09-05', { failedAt: { stageId: 'interview_1' } }]], { city: '上海' }),
+    application('y', '丙', '工程师', [['submitted', '2026-09-01'], ['screening', '2026-09-02']], { city: '' }),
+  ];
+  const projection = domain.projectProgressTable({ applications: data.map(item => item.app), progressRecords: data.map(item => item.record), definitions, now: '2026-10-06' });
+  const all = sheet.buildSheetItems(projection.rows, data.map(item => item.record), channels, '2026-10-06');
+  const filter = overrides => sheet.filterSheetItems(all, { search: '', channelId: sheet.ALL, stageKey: sheet.ALL, outcome: sheet.ALL, city: sheet.ALL, ...overrides }).map(item => item.row.application.id);
+  assert.deepEqual(filter({ stageKey: 'stage:interview_1' }), ['w', 'x'], '待一面和一面挂都算一面');
+  assert.deepEqual(filter({ stageKey: 'stage:interview_1', outcome: 'failed' }), ['x']);
+  assert.deepEqual(filter({ city: '上海' }), ['w', 'x']);
+  assert.deepEqual(sheet.sheetStatusChips(all, definitions, sheet.ALL).map(chip => [chip.label, chip.count]), [['简历筛选', 1], ['一面', 2]]);
+  assert.deepEqual(sheet.sheetCities(all), [{ city: '上海', count: 2 }, { city: '北京', count: 1 }]);
 });

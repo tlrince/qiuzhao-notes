@@ -1,4 +1,5 @@
 import type { DataSnapshotV2 } from './snapshot.js';
+import { splitCities } from './cities.js';
 import type { FailedAt, ProgressEvent, ProgressRecord, StageDefinition } from './types.js';
 
 export interface V2AnalyticsQuery {
@@ -243,8 +244,9 @@ export function calculateV2Analytics(snapshot: DataSnapshotV2, query: V2Analytic
     if (row.offer) channelRow.offer.add(application.id);
     channelRows.set(application.channelId, channelRow);
     if (row.submitted && application.appliedOn !== null) {
-      const city = application.city.trim() || '未填写';
-      addToSetMap(cityRows, city, application.id);
+      // A posting open in several cities counts once for each of them.
+      const cities = splitCities(application.city);
+      for (const city of cities.length ? cities : ['未填写']) addToSetMap(cityRows, city, application.id);
     }
 
     const seenStageVisits = new Set<string>();
@@ -352,7 +354,8 @@ export function calculateV2Analytics(snapshot: DataSnapshotV2, query: V2Analytic
     activityWindow,
     activeDayCount: activity.filter(item => item.count > 0).length,
     channels: [...channelRows.entries()].map(([channelId, row]) => ({ channelId, name: row.name, submittedCount: row.submitted.size, interviewCount: row.human.size, aiInterviewCount: row.ai.size, offerCount: row.offer.size })).sort((a, b) => a.name.localeCompare(b.name)),
-    cities: [...cityRows.entries()].map(([city, applications]) => ({ city, count: applications.size })).sort((a, b) => a.city.localeCompare(b.city)),
+    cities: [...cityRows.entries()].map(([city, applications]) => ({ city, count: applications.size }))
+      .sort((a, b) => (a.city === '未填写' ? 1 : 0) - (b.city === '未填写' ? 1 : 0) || b.count - a.count || a.city.localeCompare(b.city, 'zh-Hans-CN')),
     poolVisits,
     poolDuration,
   };

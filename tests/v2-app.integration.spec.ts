@@ -76,7 +76,8 @@ test('empty v1 browser database migrates on cold start and v2 data is shared acr
   await page.getByRole('link', { name: '进度看板' }).click();
   await expect(page.getByRole('heading', { name: '每一段经历，都有迹可循。' })).toBeVisible();
   await expect(page.locator('.sheet__co').getByText(TEST_COMPANY)).toBeVisible();
-  await expect(page.locator('.board-stat').filter({ hasText: '总投递' })).toContainText('1');
+  const submittedStat = page.locator('.board-stat').filter({ hasText: '总投递' });
+  await expect(submittedStat).toContainText('0', { useInnerText: true });
   const statusSelect = page.getByRole('combobox', { name: new RegExp(`修改${TEST_COMPANY}的状态，当前待投递`) });
   await expect(statusSelect).toBeVisible();
   await statusSelect.selectOption({ label: '筛选中' });
@@ -85,9 +86,10 @@ test('empty v1 browser database migrates on cold start and v2 data is shared acr
   await expect(page.locator('.toast').filter({ hasText: '状态已更新为「筛选中」' })).toBeVisible();
   await expect(page.getByRole('combobox', { name: new RegExp(`修改${TEST_COMPANY}的状态，当前筛选中`) })).toHaveValue('stage:screening');
   await expect(page.getByText('已保存到此浏览器', { exact: true })).toBeVisible();
+  await expect(submittedStat).toContainText('1', { useInnerText: true });
 
   await page.getByRole('link', { name: '深度分析' }).click();
-  await expect(page.getByText('数据洞察 · 1 条岗位记录', { exact: true })).toBeVisible();
+  await expect(page.getByText('数据洞察 · 共 1 条记录，其中 1 条已投递', { exact: true })).toBeVisible();
 
   await page.getByRole('link', { name: '数据总览' }).click();
   await expect(page.getByRole('heading', { name: /每一步，都算数/ })).toBeVisible();

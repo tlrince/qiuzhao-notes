@@ -30,6 +30,8 @@ export interface CreateStageInput extends WorkspaceRevisionInput {
   sortOrder: number;
   countsAsInterview?: boolean;
   interviewRound?: number;
+  /** Also create the stage's usual statuses (待X / X中 / X待结果 / X通过 / X挂, or one status for 筛选/泡池子). */
+  withStatuses?: boolean;
 }
 
 export type StageDefinitionPatch = Partial<Pick<StageDefinition,
@@ -60,10 +62,13 @@ export interface DefinitionCommands {
   createStage(input: CreateStageInput): Promise<DefinitionCommandResult<StageDefinition>>;
   updateStage(input: WorkspaceRevisionInput & { stageId: string; patch: StageDefinitionPatch }): Promise<DefinitionCommandResult<StageDefinition>>;
   archiveStage(input: WorkspaceRevisionInput & { stageId: string; at?: string }): Promise<DefinitionCommandResult<StageDefinition>>;
+  /** Brings an archived stage back together with the statuses archived with it. */
+  unarchiveStage(input: WorkspaceRevisionInput & { stageId: string }): Promise<DefinitionCommandResult<StageDefinition>>;
   deleteStage(input: WorkspaceRevisionInput & { stageId: string }): Promise<DefinitionCommandResult<void>>;
   createStatus(input: CreateStatusInput): Promise<DefinitionCommandResult<StatusDefinition>>;
   updateStatus(input: WorkspaceRevisionInput & { statusId: string; patch: StatusDefinitionPatch }): Promise<DefinitionCommandResult<StatusDefinition>>;
   archiveStatus(input: WorkspaceRevisionInput & { statusId: string; at?: string }): Promise<DefinitionCommandResult<StatusDefinition>>;
+  unarchiveStatus(input: WorkspaceRevisionInput & { statusId: string }): Promise<DefinitionCommandResult<StatusDefinition>>;
   deleteStatus(input: WorkspaceRevisionInput & { statusId: string }): Promise<DefinitionCommandResult<void>>;
 }
 
@@ -143,6 +148,28 @@ function assertDefinitionRelations(definitions: R1DefinitionsSnapshot): void {
   }
 }
 
+const STATUS_COLORS = { waiting: '#c39b63', in_progress: '#b87962', awaiting_result: '#c39b63', passed: '#8c9a70', failed: '#b87962' } as const;
+
+/** The statuses a new stage usually needs, so stages and statuses never have to be kept in sync by hand. */
+function standardStatuses(stage: StageDefinition, newId: () => string): StatusDefinition[] {
+  const make = (name: string, semantic: StatusSemantic, defaultPhase: ProgressPhase, offset: number, color: string): StatusDefinition => ({
+    id: newId(), name, color, sortOrder: stage.sortOrder + offset, version: 1, archivedAt: null, semantic, stageId: stage.id, defaultPhase,
+    statisticsCategory: semantic === 'failed' ? 'failed' : stage.id,
+    semanticsHistory: [{ version: 1, semantic, stageId: stage.id, stageCategory: stage.category, defaultPhase, statisticsCategory: semantic === 'failed' ? 'failed' : stage.id, countsAsInterview: stage.countsAsInterview }],
+  });
+  if (stage.category === 'offer') return [];
+  if (stage.category === 'screening' || stage.category === 'pool') {
+    return [make(stage.category === 'pool' ? stage.name : `${stage.name}中`, stage.category, 'unknown', 0, STATUS_COLORS.waiting), ...(stage.category === 'screening' ? [make(`${stage.name}挂`, 'failed', 'unknown', 4, STATUS_COLORS.failed)] : [])];
+  }
+  return [
+    make(`待${stage.name}`, 'stage', 'waiting', 0, STATUS_COLORS.waiting),
+    make(`${stage.name}中`, 'stage', 'in_progress', 1, STATUS_COLORS.in_progress),
+    make(`${stage.name}待结果`, 'stage', 'awaiting_result', 2, STATUS_COLORS.awaiting_result),
+    make(`${stage.name}通过`, 'stage', 'passed', 3, STATUS_COLORS.passed),
+    make(`${stage.name}挂`, 'failed', 'unknown', 4, STATUS_COLORS.failed),
+  ];
+}
+
 function statusIsReferenced(snapshot: DataSnapshotV2, statusId: string): boolean {
   return snapshot.applications.some(application => application.currentStatusId === statusId)
     || snapshot.progressRecords.some(record => record.events.some(event => event.statusId === statusId));
@@ -214,6 +241,7 @@ export function createDefinitionCommands(
           ...(input.interviewRound === undefined ? {} : { interviewRound: input.interviewRound }),
         };
         snapshot.definitions.stages.push(stage);
+        if (input.withStatuses) snapshot.definitions.statuses.push(...standardStatuses(stage, () => ensureNewId(undefined, '状态', snapshot.definitions)));
         return stage;
       });
     },
@@ -230,7 +258,14 @@ export function createDefinitionCommands(
         const stage = findStage(snapshot.definitions, input.stageId);
         if ('name' in input.patch) {
           requireRule(typeof input.patch.name === 'string' && !!input.patch.name.trim(), '环节名称不能为空');
+          const previousName = stage.name;
           stage.name = input.patch.name.trim();
+          // Statuses named after the stage (待一面、一面中…) follow the rename; history keeps its snapshots.
+          if (previousName !== stage.name) {
+            for (const status of snapshot.definitions.statuses) {
+              if (status.stageId === stage.id && status.name.includes(previousName)) status.name = status.name.replaceAll(previousName, stage.name);
+            }
+          }
         }
         if ('category' in input.patch) stage.category = input.patch.category!;
         if ('sortOrder' in input.patch) stage.sortOrder = input.patch.sortOrder!;
@@ -256,6 +291,19 @@ export function createDefinitionCommands(
         stage.archivedAt ??= at;
         for (const status of snapshot.definitions.statuses) {
           if (status.stageId === stage.id) status.archivedAt ??= at;
+        }
+        return stage;
+      });
+    },
+
+    unarchiveStage(input) {
+      return transact(input, snapshot => {
+        const stage = findStage(snapshot.definitions, input.stageId);
+        requireRule(stage.archivedAt !== null, '环节没有归档');
+        const archivedAt = stage.archivedAt;
+        stage.archivedAt = null;
+        for (const status of snapshot.definitions.statuses) {
+          if (status.stageId === stage.id && status.archivedAt === archivedAt) status.archivedAt = null;
         }
         return stage;
       });
@@ -343,6 +391,17 @@ export function createDefinitionCommands(
         validateInstant(at);
         const status = findStatus(snapshot.definitions, input.statusId);
         status.archivedAt ??= at;
+        return status;
+      });
+    },
+
+    unarchiveStatus(input) {
+      return transact(input, snapshot => {
+        const status = findStatus(snapshot.definitions, input.statusId);
+        requireRule(status.archivedAt !== null, '状态没有归档');
+        const stage = status.stageId === null ? null : findStage(snapshot.definitions, status.stageId);
+        requireRule(!stage || stage.archivedAt === null, '所属环节已归档，请先恢复环节');
+        status.archivedAt = null;
         return status;
       });
     },

@@ -87,3 +87,31 @@ test('工作空间偏好与招聘季配置共用快照 CAS，拒绝无效 key/va
   await assert.rejects(commands.setPreference({ expectedRevision: current.revision, key: 'bad-number', value: Number.NaN }), error => error.code === 'VALIDATION');
   assert.deepEqual(await store.read(), current);
 });
+
+test('归档的招聘季可以恢复；渠道可新增、改名、归档和恢复', async () => {
+  const { store, commands } = fixture();
+  let state = await store.read();
+  const autumn = await commands.createSeason({ expectedRevision: state.revision, name: '秋招', startDate: '2026-07-01', endDate: '2026-12-31', targetCount: 80 });
+  state = await store.read();
+  await commands.archiveSeason({ expectedRevision: state.revision, seasonId: autumn.value.id });
+  state = await store.read();
+  assert.equal(state.data.workspace.activeSeasonId, null);
+  const restored = await commands.unarchiveSeason({ expectedRevision: state.revision, seasonId: autumn.value.id });
+  assert.equal(restored.value.archivedAt, null);
+  state = await store.read();
+  assert.equal(state.data.workspace.activeSeasonId, autumn.value.id);
+
+  const created = await commands.createChannel({ expectedRevision: state.revision, name: '  牛客  ' });
+  assert.equal(created.value.name, '牛客');
+  state = await store.read();
+  await assert.rejects(commands.createChannel({ expectedRevision: state.revision, name: '牛客' }), /同名渠道/);
+  const renamed = await commands.renameChannel({ expectedRevision: state.revision, channelId: created.value.id, name: '牛客网' });
+  assert.equal(renamed.value.name, '牛客网');
+  state = await store.read();
+  await commands.archiveChannel({ expectedRevision: state.revision, channelId: created.value.id });
+  state = await store.read();
+  assert.equal(state.data.channels.find(item => item.id === created.value.id).archivedAt, now);
+  await commands.unarchiveChannel({ expectedRevision: state.revision, channelId: created.value.id });
+  state = await store.read();
+  assert.equal(state.data.channels.find(item => item.id === created.value.id).archivedAt, null);
+});

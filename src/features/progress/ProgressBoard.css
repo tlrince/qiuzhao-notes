@@ -9,16 +9,16 @@
 .board-search { position: relative; flex: 1; min-width: 210px; max-width: 340px; color: #b3a892; }
 .board-search svg { position: absolute; top: 50%; left: 11px; transform: translateY(-50%); pointer-events: none; }
 .board-search input { width: 100%; padding: 9px 12px 9px 34px; border: 1px solid #e7e0d2; border-radius: 10px; background: #fff; color: #26211a; font: inherit; outline: none; }
-.board-search input:focus, .board-select:focus { border-color: #e8590c; box-shadow: 0 0 0 3px rgba(232, 89, 12, .12); }
+.board-search input:focus, .board-select:focus { border-color: #0f766e; box-shadow: 0 0 0 3px rgba(15, 118, 110, .14); }
 .board-select { appearance: none; -webkit-appearance: none; padding: 9px 30px 9px 12px; border: 1px solid #e7e0d2; border-radius: 10px; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238d8371' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center / 12px; color: #26211a; font: inherit; outline: none; cursor: pointer; }
 .board-count { margin-left: auto; color: #8d8371; font-size: 12px; }
-.board-link { padding: 0; border: 0; background: none; color: #e8590c; font: inherit; text-decoration: underline dotted; cursor: pointer; }
+.board-link { padding: 0; border: 0; background: none; color: #0f766e; font: inherit; text-decoration: underline dotted; cursor: pointer; }
 
 .board-chips { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 6px; padding: 2px 2px 10px; scrollbar-width: thin; }
 .board-chip { display: inline-flex; flex: none; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid #e7e0d2; border-radius: 999px; background: #fff; color: #8d8371; font: inherit; font-size: 13px; cursor: pointer; transition: .15s; }
 .board-chip b { font-size: 12px; font-weight: 600; opacity: .8; }
 .board-chip:hover { border-color: #d5cbb8; color: #26211a; }
-.board-chip--on { border-color: #2b2118; background: #2b2118; color: #fff; }
+.board-chip--on { border-color: #0f766e; background: #0f766e; color: #fff; }
 .board-chip--on b { opacity: .7; }
 .board-chip__dot { width: 7px; height: 7px; flex: none; border-radius: 99px; background: var(--c, #a8a29e); }
 

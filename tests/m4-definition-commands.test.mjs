@@ -192,3 +192,29 @@ test('错误 workspace 与陈旧 revision 均不提交配置变更', async () =>
   assert.equal(after.data.definitions.stages.some(item => item.id === 'stale-stage'), false);
   assert.equal(after.data.definitions.stages.some(item => item.id === 'wrong-stage'), false);
 });
+
+test('a new stage brings its usual statuses, renames carry over, and archived definitions can be restored', async () => {
+  const { store, commands } = setup();
+  const hr = await commands.createStage({ ...await withRevision(store), name: 'HR 面', category: 'interview', sortOrder: 95, countsAsInterview: true, withStatuses: true });
+  let statuses = (await current(store)).data.definitions.statuses.filter(item => item.stageId === hr.value.id);
+  assert.deepEqual(statuses.map(item => item.name), ['待HR 面', 'HR 面中', 'HR 面待结果', 'HR 面通过', 'HR 面挂']);
+  assert.ok(statuses.every(item => item.semanticsHistory[0].countsAsInterview));
+
+  await commands.updateStage({ ...await withRevision(store), stageId: hr.value.id, patch: { name: '主管面' } });
+  statuses = (await current(store)).data.definitions.statuses.filter(item => item.stageId === hr.value.id);
+  assert.deepEqual(statuses.map(item => item.name), ['待主管面', '主管面中', '主管面待结果', '主管面通过', '主管面挂'], '改环节名后状态名同步');
+
+  const archivedAlone = statuses[3];
+  await commands.archiveStatus({ ...await withRevision(store), statusId: archivedAlone.id, at: '2026-09-17T02:00:00.000Z' });
+  await commands.archiveStage({ ...await withRevision(store), stageId: hr.value.id, at: '2026-09-17T03:00:00.000Z' });
+  await assert.rejects(commands.unarchiveStatus({ ...await withRevision(store), statusId: statuses[0].id }), /先恢复环节/);
+  await commands.unarchiveStage({ ...await withRevision(store), stageId: hr.value.id });
+  const restored = (await current(store)).data.definitions;
+  assert.equal(restored.stages.find(item => item.id === hr.value.id).archivedAt, null);
+  assert.deepEqual(restored.statuses.filter(item => item.stageId === hr.value.id && item.archivedAt !== null).map(item => item.id), [archivedAlone.id], '单独归档过的状态保持归档');
+  await commands.unarchiveStatus({ ...await withRevision(store), statusId: archivedAlone.id });
+  validateV2Snapshot((await current(store)).data);
+
+  await commands.createStage({ ...await withRevision(store), name: '复筛', category: 'screening', sortOrder: 12, withStatuses: true });
+  assert.deepEqual((await current(store)).data.definitions.statuses.filter(item => item.name.startsWith('复筛')).map(item => [item.name, item.semantic]), [['复筛中', 'screening'], ['复筛挂', 'failed']]);
+});

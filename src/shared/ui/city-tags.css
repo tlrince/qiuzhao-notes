@@ -1,0 +1,6 @@
+.city-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 2.35rem; padding: 4px 6px; border: 1px solid var(--applications-border, #deded4); border-radius: 3px; background: #fffefa; }
+.city-tags:focus-within { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.city-tags__tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 9px; border-radius: 999px; background: #efede6; color: #34382f; font-size: 13px; }
+.city-tags__tag button { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #74776e; line-height: 1; cursor: pointer; }
+.city-tags__tag button:hover { background: #ddd9cd; }
+.city-tags input { flex: 1; min-width: 8rem; min-height: 1.8rem !important; padding: 0 4px !important; border: 0 !important; background: transparent !important; outline: none; }

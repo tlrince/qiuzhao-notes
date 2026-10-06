@@ -1,11 +1,12 @@
 import { useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import type { ProgressEvent, ProgressRecord, R1DefinitionsSnapshot, StatusDefinition } from '../../domain/v2/types.js';
+import type { ProgressEvent, ProgressRecord, R1DefinitionsSnapshot } from '../../domain/v2/types.js';
 import {
   allowedProgressStatuses,
   buildProgressStatusEditorCommand,
   continuesVisit,
   localBusinessDate,
   pendingOfferCountForDraft,
+  statusOptionGroups,
   visitContinuation,
   type ProgressStatusEditorCommand,
   type ProgressStatusEditorDraft,
@@ -52,11 +53,6 @@ function initialDraft(action: ProgressHistoryAction, record: ProgressRecord, tod
     notes: action.kind === 'correct' ? target?.notes ?? '' : '',
     reopenReason: '',
   };
-}
-
-function statusLabel(status: StatusDefinition, definitions: R1DefinitionsSnapshot): string {
-  const stage = definitions.stages.find(item => item.id === status.stageId);
-  return stage ? `${status.name} · ${stage.name}` : status.name;
 }
 
 export function ProgressHistoryEditor({
@@ -155,7 +151,7 @@ export function ProgressHistoryEditor({
       <span>状态</span>
       <select required value={draft.statusId} onChange={event => setDraft(previous => ({ ...previous, statusId: event.target.value, phase: '', failedAt: '', visitChoice: 'auto' }))}>
         <option value="">选择状态</option>
-        {statuses.map(status => <option key={status.id} value={status.id}>{statusLabel(status, definitions)}</option>)}
+        {statusOptionGroups(statuses, definitions).map(group => <optgroup key={group.label} label={group.label}>{group.statuses.map(status => <option key={status.id} value={status.id}>{status.name}</option>)}</optgroup>)}
       </select>
     </label>
 
