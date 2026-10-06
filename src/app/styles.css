@@ -123,3 +123,15 @@ progress::-webkit-progress-bar { background: var(--color-border); } progress::-w
 .toast__action { padding: 0; border: 0; background: none; color: #fdba74; font: inherit; font-weight: 600; cursor: pointer; }
 .toast__action:hover { text-decoration: underline; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.settings-about { display: grid; gap: 12px; padding: 4px 24px 20px; }
+.update-notice { position: fixed; right: 24px; bottom: 24px; z-index: 210; display: grid; gap: 8px; width: min(340px, calc(100vw - 32px)); padding: 16px 18px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-paper); box-shadow: 0 12px 32px rgba(42, 41, 37, .16); font-size: 13px; }
+.update-notice strong { color: var(--color-ink); font-size: 14px; }
+.update-notice p { margin: 0; line-height: 1.6; }
+.update-notice__notes { max-height: 6.4em; overflow: auto; color: var(--color-ink); white-space: pre-line; }
+.update-notice__hint { color: var(--color-muted); font-size: 12px; }
+.update-notice__error { color: #b42318; font-size: 12px; }
+.update-notice__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.update-notice__actions button { min-height: 32px; padding: 4px 12px; border: 1px solid var(--color-border); border-radius: 8px; background: #fff; font-size: 13px; }
+.update-notice__actions .update-notice__go { border-color: var(--color-accent); background: var(--color-accent); color: #fff; font-weight: 600; }
+.update-notice__actions button:disabled { opacity: .6; }
+@media (max-width: 767px) { .update-notice { right: 16px; bottom: 16px; } .settings-about { padding-inline: 18px; } }
