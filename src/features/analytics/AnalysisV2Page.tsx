@@ -44,6 +44,15 @@ function activityLevel(count: number, maximum: number): number {
 
 function ActivityCharts({ result, today }: { result: V2AnalyticsResult; today: string }) {
   const weeks = useMemo(() => buildActivityWeeks(result, today), [result, today]);
+  // Follow the pointer and describe the day under it immediately (native titles lag).
+  const [hover, setHover] = useState<{ text: string; x: number; y: number } | null>(null);
+  const trackPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const cell = (event.target as HTMLElement).closest<HTMLElement>('[data-date]');
+    if (!cell) { setHover(null); return; }
+    const box = event.currentTarget.getBoundingClientRect();
+    const cellBox = cell.getBoundingClientRect();
+    setHover({ text: cell.dataset.label ?? '', x: cellBox.left - box.left + cellBox.width / 2, y: cellBox.top - box.top });
+  };
   const totals = useMemo(() => weeklyActivityTotals(weeks), [weeks]);
   const maxDaily = Math.max(0, ...weeks.flat().filter(cell => !cell.disabled).map(cell => cell.count));
   const maxWeekly = Math.max(1, ...totals);
@@ -53,13 +62,15 @@ function ActivityCharts({ result, today }: { result: V2AnalyticsResult; today: s
       <div className="analysis-v2__activity-summary"><strong>{result.activeDayCount}</strong><span>个有投递的日期</span><span className="analysis-v2__summary-divider" aria-hidden="true" /><strong>{result.thisWeekCount}</strong><span>本周投递</span></div>
       <div className="analysis-v2__heatmap-wrap">
         <div className="analysis-v2__weekday-labels" aria-hidden="true"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
-        <div className="analysis-v2__heatmap" role="grid" aria-label="近 12 周投递活跃度，按周一至周日排列">
+        <div className="analysis-v2__heatmap" role="grid" aria-label="近 12 周投递活跃度，按周一至周日排列" onPointerMove={trackPointer} onPointerLeave={() => setHover(null)}>
+          {hover && <div className="analysis-v2__heat-tip" style={{ left: hover.x, top: hover.y }} role="tooltip">{hover.text}</div>}
           {weeks.map((week, index) => <div className="analysis-v2__heatmap-week" role="row" key={week[0]?.date ?? index} aria-label={`${week[0]?.date ?? ''} 所在周`}>
             {week.map(cell => <span
               className={`analysis-v2__day analysis-v2__day--level-${activityLevel(cell.count, maxDaily)}${cell.disabled ? ' analysis-v2__day--disabled' : ''}`}
               role="gridcell"
               aria-label={activityDescription(cell.date, cell.count, cell.disabled, today)}
-              title={activityDescription(cell.date, cell.count, cell.disabled, today)}
+              data-date={cell.date}
+              data-label={activityDescription(cell.date, cell.count, cell.disabled, today)}
               key={cell.date}
             />)}
           </div>)}
@@ -131,8 +142,8 @@ function ChannelPerformance({ result }: { result: V2AnalyticsResult }) {
           return <div className={`analysis-v2__channel-value analysis-v2__channel-value--${item.tone}`} key={item.key} title={title}>
             <div className="analysis-v2__channel-track"><span style={{ width: `${Math.max(count > 0 ? 2 : 0, (count / max) * 100)}%` }} /></div>
             <span className="analysis-v2__channel-count">{count}</span>
-            {item.key !== 'submittedCount' && <small>{formatAnalysisRate(rate)}</small>}
-            {item.key === 'interviewCount' && channel.aiInterviewCount > 0 && <small>AI 面 {channel.aiInterviewCount}</small>}
+            {/* Every cell keeps a second line so the three columns stay aligned. */}
+            <small>{item.key === 'submittedCount' ? '\u00a0' : `${formatAnalysisRate(rate)}${item.key === 'interviewCount' && channel.aiInterviewCount > 0 ? ` · AI 面 ${channel.aiInterviewCount}` : ''}`}</small>
           </div>;
         })}
       </div>)}
@@ -153,13 +164,13 @@ function CityDistribution({ result }: { result: V2AnalyticsResult }) {
     return `${segment.color} ${start}deg ${angle}deg`;
   }).join(', ');
   const donutStyle: CSSProperties = { background: total > 0 ? `conic-gradient(${gradient})` : 'var(--color-border)' };
-  return <ChartCard title="城市分布" subtitle="按已投递岗位统计，空城市会归入“未填写”。" className="analysis-v2__city-card">
+  return <ChartCard title="城市分布" subtitle="按已投递岗位统计；一个岗位有多个城市时分别计入每个城市，空城市归入“未填写”。" className="analysis-v2__city-card">
     {segments.length ? <div className="analysis-v2__city-content">
-      <div className="analysis-v2__donut" role="img" aria-label={`城市分布，共 ${total} 个岗位：${segments.map(item => `${item.city} ${item.count}`).join('，')}`} style={donutStyle}>
-        <div><strong>{total}</strong><span>个岗位</span></div>
+      <div className="analysis-v2__donut" role="img" aria-label={`城市分布，共 ${result.submittedCount} 个岗位：${segments.map(item => `${item.city} ${item.count}`).join('，')}`} style={donutStyle}>
+        <div><strong>{result.submittedCount}</strong><span>个岗位</span></div>
       </div>
       <ul className="analysis-v2__city-list">
-        {segments.map(city => <li key={city.city}><span className="analysis-v2__city-name"><i style={{ backgroundColor: city.color }} />{city.city}</span><strong>{city.count}</strong><small>{formatAnalysisRate((city.count / total) * 100)}</small></li>)}
+        {segments.map(city => <li key={city.city}><span className="analysis-v2__city-name"><i style={{ backgroundColor: city.color }} />{city.city}</span><strong>{city.count}</strong><small>{formatAnalysisRate((city.count / Math.max(1, result.submittedCount)) * 100)}</small></li>)}
       </ul>
     </div> : <EmptyState compact icon="target" title="还没有城市样本" description="已投递记录的城市会显示在这里；城市未填写时会归入“未填写”。" />}
   </ChartCard>;
@@ -167,7 +178,7 @@ function CityDistribution({ result }: { result: V2AnalyticsResult }) {
 
 function StatArea({ result, today, seasonName }: { result: V2AnalyticsResult; today: string; seasonName: string }) {
   return <>
-    <div className="analysis-v2__scope-caption"><strong>数据洞察 · {result.recordCount} 条岗位记录</strong><span>{seasonName}</span></div>
+    <div className="analysis-v2__scope-caption"><strong>数据洞察 · 共 {result.recordCount} 条记录，其中 {result.submittedCount} 条已投递</strong><span>{seasonName}</span></div>
     <div className="analysis-v2__metrics">
       <Metric label="累计投递" value={result.submittedCount} note="以有效投递事件和投递日期统计" icon="file" />
       <Metric label="流程进行中" value={result.activeCount} note="已投递且当前仍在招聘流程中" icon="clock" />

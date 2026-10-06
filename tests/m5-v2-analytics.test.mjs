@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateV2Analytics } from '../src/domain/v2/analytics.ts';
+import { calculateV2Analytics } from '../dist/domain/v2/analytics.js';
 
 const stages = [
   { id: 'screening', name: '简历筛选', category: 'screening', sortOrder: 10, archivedAt: null, countsAsInterview: false },
@@ -288,4 +288,15 @@ test('empty heatmap intersection returns no dates and a null display window', ()
   assert.equal(result.activityWindow, null);
   assert.deepEqual(result.activity, []);
   assert.equal(result.activeDayCount, 0);
+});
+
+test('a posting open in several cities counts once for each city, never as a combined label', async () => {
+  const { splitCities, joinCities } = await import('../dist/domain/v2/cities.js');
+  assert.deepEqual(splitCities('北京、上海, 杭州 / 北京'), ['北京', '上海', '杭州']);
+  assert.equal(joinCities(['深圳', ' 深圳 ', '广州']), '深圳、广州');
+  const snapshot = sampleSnapshot();
+  snapshot.applications.find(item => item.id === 'B').city = '上海、北京';
+  const result = calculateV2Analytics(snapshot, { seasonId: 'season' }, shanghaiClock);
+  assert.ok(!result.cities.some(item => item.city.includes('、')));
+  assert.equal(result.cities.find(item => item.city === '北京').count, 2);
 });

@@ -58,7 +58,10 @@
 .analysis-v2__summary-divider { height: 14px; margin-inline: 6px; border-left: 1px solid var(--color-border); }
 .analysis-v2__heatmap-wrap { display: grid; grid-template-columns: 12px minmax(0, 1fr); align-items: start; gap: 7px; }
 .analysis-v2__weekday-labels { display: grid; grid-template-rows: repeat(7, 12px); gap: 5px; color: var(--color-muted); font-size: 8px; text-align: center; }
-.analysis-v2__heatmap { display: grid; grid-template-columns: repeat(12, 14px); justify-content: space-between; gap: 0; min-width: 0; }
+.analysis-v2__heatmap { position: relative; display: grid; grid-template-columns: repeat(12, 14px); justify-content: space-between; gap: 0; min-width: 0; }
+.analysis-v2__heatmap .analysis-v2__day { cursor: pointer; transition: transform .08s; }
+.analysis-v2__heatmap .analysis-v2__day:hover { transform: scale(1.25); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); }
+.analysis-v2__heat-tip { position: absolute; z-index: 3; transform: translate(-50%, calc(-100% - 8px)); padding: 4px 8px; border-radius: 6px; background: #2b2a26; color: #fff; font-size: 12px; white-space: nowrap; pointer-events: none; }
 .analysis-v2__heatmap-week { display: grid; grid-template-rows: repeat(7, 14px); gap: 5px; width: 14px; }
 .analysis-v2__day { display: block; width: 14px; height: 14px; min-width: 0; background: #efeee8; border-radius: 2px; }
 .analysis-v2__day--level-1 { background: #dedbcc; }
@@ -85,7 +88,7 @@
 .analysis-v2__chart-empty-note { margin-top: 12px; color: var(--color-muted); font-size: 9px; text-align: center; }
 .analysis-v2__channels { display: grid; gap: 0; padding: 18px 20px 20px; }
 .analysis-v2__channel-head,
-.analysis-v2__channel-row { display: grid; grid-template-columns: minmax(68px, .85fr) repeat(3, minmax(0, 1fr)); align-items: center; gap: 10px; }
+.analysis-v2__channel-row { display: grid; grid-template-columns: minmax(68px, .85fr) repeat(3, minmax(0, 1fr)); align-items: center; gap: 10px 18px; }
 .analysis-v2__channel-head { padding-bottom: 9px; border-bottom: 1px solid var(--color-border); color: var(--color-muted); font-size: 9px; }
 .analysis-v2__channel-row { min-height: 62px; border-bottom: 1px solid #efeee9; }
 .analysis-v2__channel-row:last-of-type { border-bottom: 0; }
@@ -95,8 +98,8 @@
 .analysis-v2__channel-track span { display: block; height: 100%; background: #b39277; border-radius: 2px; }
 .analysis-v2__channel-value--interview .analysis-v2__channel-track span { background: #788467; }
 .analysis-v2__channel-value--offer .analysis-v2__channel-track span { background: #c0a36d; }
-.analysis-v2__channel-count { color: var(--color-ink); font: 13px Georgia, var(--font-serif); font-variant-numeric: tabular-nums; }
-.analysis-v2__channel-value small { grid-column: 1 / 3; color: var(--color-muted); font-size: 8px; text-align: right; white-space: nowrap; }
+.analysis-v2__channel-count { min-width: 2.5ch; color: var(--color-ink); font-size: 14px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.analysis-v2__channel-value small { grid-column: 1 / 3; color: var(--color-muted); font-size: 12px; text-align: right; white-space: nowrap; }
 .analysis-v2__channels .analysis-v2__chart-footnote { margin-top: 10px; }
 .analysis-v2__city-content { display: flex; align-items: center; justify-content: center; gap: 25px; padding: 28px 23px 20px; }
 .analysis-v2__donut { display: grid; place-items: center; width: 148px; height: 148px; flex: 0 0 148px; border-radius: 50%; }

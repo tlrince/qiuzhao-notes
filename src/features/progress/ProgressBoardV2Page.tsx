@@ -10,7 +10,7 @@ import { localBusinessDate } from '../applications/progress-status-editor.js';
 import { ApplicationSheet } from './ApplicationSheet.js';
 import { ProgressHistoryEditor, type ProgressHistoryAction } from './ProgressHistoryEditor.js';
 import { buildQuickStatusChange, quickStatusTone, type QuickStatusOption, type QuickStatusResult } from './quick-status.js';
-import { ALL, buildSheetItems, filterSheetItems, matchesSearchAndChannel, sheetStats, sheetStatusChips, sortSheetItems, type SheetItem, type SheetSort } from './sheet-model.js';
+import { ALL, buildSheetItems, filterSheetItems, matchesSearchAndChannel, sheetCities, sheetStats, sheetStatusChips, sortSheetItems, type SheetFilters, type SheetItem, type SheetSort } from './sheet-model.js';
 import './ProgressBoard.css';
 
 const SORTS: Array<[SheetSort, string]> = [
@@ -55,6 +55,8 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
   const [search, setSearch] = useState('');
   const [channelId, setChannelId] = useState(ALL);
   const [statusKey, setStatusKey] = useState(ALL);
+  const [outcome, setOutcome] = useState<SheetFilters['outcome']>(ALL);
+  const [city, setCity] = useState(ALL);
   const [sort, setSort] = useState<SheetSort>('apply-desc');
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
@@ -73,12 +75,13 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
   }, [applications, snapshot.progressRecords]);
   const projection = useMemo(() => projectProgressTable({ applications, progressRecords: records, definitions: snapshot.definitions, schedules: snapshot.schedules, now: today }), [applications, records, snapshot.definitions, snapshot.schedules, today]);
   const items = useMemo(() => buildSheetItems(projection.rows, records, snapshot.channels, today), [projection.rows, records, snapshot.channels, today]);
-  const searched = useMemo(() => items.filter(item => matchesSearchAndChannel(item, { search, channelId })), [items, search, channelId]);
-  const visible = useMemo(() => sortSheetItems(filterSheetItems(items, { search, channelId, statusKey }), sort), [items, search, channelId, statusKey, sort]);
+  const searched = useMemo(() => items.filter(item => matchesSearchAndChannel(item, { search, channelId, outcome, city })), [items, search, channelId, outcome, city]);
+  const visible = useMemo(() => sortSheetItems(filterSheetItems(items, { search, channelId, stageKey: statusKey, outcome, city }), sort), [items, search, channelId, statusKey, outcome, city, sort]);
+  const cities = useMemo(() => sheetCities(items), [items]);
   const chips = useMemo(() => sheetStatusChips(searched, snapshot.definitions, statusKey), [searched, snapshot.definitions, statusKey]);
   const stats = useMemo(() => sheetStats(items), [items]);
   const usedChannels = snapshot.channels.filter(channel => channel.archivedAt === null || applications.some(application => application.channelId === channel.id));
-  const filtering = search.trim() !== '' || channelId !== ALL || statusKey !== ALL;
+  const filtering = search.trim() !== '' || channelId !== ALL || statusKey !== ALL || outcome !== ALL || city !== ALL;
   const editorRecord = editor ? snapshot.progressRecords.find(record => record.applicationId === editor.applicationId) ?? null : null;
   const editorApplication = editor ? snapshot.applications.find(application => application.id === editor.applicationId) ?? null : null;
 
@@ -152,7 +155,7 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
     setEditor(null);
   };
 
-  const clearFilters = () => { setSearch(''); setChannelId(ALL); setStatusKey(ALL); };
+  const clearFilters = () => { setSearch(''); setChannelId(ALL); setStatusKey(ALL); setOutcome(ALL); setCity(ALL); };
   const statCards: Array<{ label: string; value: string; icon: IconName; color: string; background: string }> = [
     { label: '总投递', value: String(stats.total), icon: 'file', color: '#e8590c', background: '#fdeee1' },
     { label: '投递公司', value: String(stats.companies), icon: 'building', color: '#0f766e', background: '#f0fdfa' },
@@ -174,6 +177,17 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
       </section>
       <section className="board-toolbar" aria-label="筛选与排序">
         <label className="board-search"><Icon name="search" size={15} /><span className="sheet__sr-only">搜索</span><input type="search" placeholder="搜索公司 / 岗位 / 城市 / 备注…" value={search} onChange={event => setSearch(event.target.value)} /></label>
+        <select className="board-select" aria-label="按结果筛选" value={outcome} onChange={event => setOutcome(event.target.value as SheetFilters['outcome'])}>
+          <option value={ALL}>全部结果</option>
+          <option value="active">进行中</option>
+          <option value="failed">已挂</option>
+          <option value="offer">Offer</option>
+          <option value="withdrawn">主动退出</option>
+        </select>
+        <select className="board-select" aria-label="按城市筛选" value={city} onChange={event => setCity(event.target.value)}>
+          <option value={ALL}>全部城市</option>
+          {cities.map(item => <option key={item.city} value={item.city}>{item.city}（{item.count}）</option>)}
+        </select>
         <select className="board-select" aria-label="按渠道筛选" value={channelId} onChange={event => setChannelId(event.target.value)}>
           <option value={ALL}>全部渠道</option>
           {usedChannels.map(channel => <option key={channel.id} value={channel.id}>{channel.name}</option>)}
@@ -183,7 +197,7 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
         </select>
         <span className="board-count">{filtering
           ? <>显示 {visible.length} 条 / 共 {items.length} 条 <button type="button" className="board-link" onClick={clearFilters}>清除筛选</button></>
-          : <>共 {items.length} 条投递 · {stats.companies} 家公司</>}</span>
+          : <>共 {items.length} 条记录 · {stats.total} 条已投递 · {stats.companies} 家公司</>}</span>
       </section>
       <nav className="board-chips" aria-label="按状态筛选">
         <button type="button" className={`board-chip${statusKey === ALL ? ' board-chip--on' : ''}`} aria-pressed={statusKey === ALL} onClick={() => setStatusKey(ALL)}>全部 <b>{searched.length}</b></button>

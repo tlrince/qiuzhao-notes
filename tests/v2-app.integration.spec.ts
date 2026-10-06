@@ -87,7 +87,7 @@ test('empty v1 browser database migrates on cold start and v2 data is shared acr
   await expect(page.getByText('已保存到此浏览器', { exact: true })).toBeVisible();
 
   await page.getByRole('link', { name: '深度分析' }).click();
-  await expect(page.getByText('数据洞察 · 1 条岗位记录', { exact: true })).toBeVisible();
+  await expect(page.getByText('数据洞察 · 共 1 条记录，其中 1 条已投递', { exact: true })).toBeVisible();
 
   await page.getByRole('link', { name: '数据总览' }).click();
   await expect(page.getByRole('heading', { name: /每一步，都算数/ })).toBeVisible();

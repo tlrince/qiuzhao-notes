@@ -5,3 +5,4 @@ export * from './mock.js';
 export * from './snapshot.js';
 export * from './migration.js';
 export * from './table.js';
+export * from './cities.js';

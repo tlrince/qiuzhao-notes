@@ -1,6 +1,7 @@
 import type { Channel } from '../../domain/types.js';
 import type { ProgressTableRow } from '../../domain/v2/table.js';
 import type { ProgressRecord, R1DefinitionsSnapshot } from '../../domain/v2/types.js';
+import { splitCities } from '../../domain/v2/cities.js';
 import { currentQuickStatusKey, quickStatusKeyLabel, quickStatusKeyRank } from './quick-status.js';
 
 /** Days without a status change before a row suggests following up (offer.html used 14). */
@@ -12,15 +13,46 @@ export interface SheetItem {
   row: ProgressTableRow;
   record: ProgressRecord;
   statusKey: string;
+  /** Filter group: the stage the application is in or failed at (一面挂 belongs to 一面). */
+  stageKey: string;
+  outcome: SheetOutcome;
+  cities: string[];
   channelName: string;
   /** Days since the current status, only for rows still waiting on someone (not drafts, pools or outcomes). */
   staleDays: number | null;
 }
 
+export type SheetOutcome = 'active' | 'failed' | 'offer' | 'withdrawn';
+
 export interface SheetFilters {
   search: string;
   channelId: string;
-  statusKey: string;
+  /** A stage group key from stageFilterKey, or ALL. */
+  stageKey: string;
+  outcome: SheetOutcome | typeof ALL;
+  city: string;
+}
+
+/** Groups by stage regardless of phase or result, so 待一面、一面中、一面挂 are all 一面. */
+export function stageFilterKey(record: ProgressRecord): string {
+  const current = record.events.filter(event => event.invalidatedAt === null).sort((left, right) => left.sequence - right.sequence).at(-1);
+  if (!current || current.semantics.semantic === 'draft') return 'draft';
+  const { semantic } = current.semantics;
+  if (semantic === 'submitted') return 'submitted';
+  if (semantic === 'offer_received' || semantic === 'offer_accepted' || semantic === 'offer_declined') return 'offer';
+  if (semantic === 'failed') {
+    const stageId = typeof current.failedAt === 'object' && current.failedAt !== null ? current.failedAt.stageId : current.semantics.stageId ?? current.contextStageId;
+    return stageId ? `stage:${stageId}` : 'failed';
+  }
+  if (semantic === 'withdrawn') return 'withdrawn';
+  return current.semantics.stageId ? `stage:${current.semantics.stageId}` : `status:${current.statusId}`;
+}
+
+function outcomeGroup(outcome: ProgressTableRow['current']['outcome']): SheetOutcome {
+  if (outcome === 'failed') return 'failed';
+  if (outcome === 'withdrawn') return 'withdrawn';
+  if (outcome === 'active') return 'active';
+  return 'offer';
 }
 
 export const ALL = 'all';
@@ -53,14 +85,20 @@ export function buildSheetItems(rows: readonly ProgressTableRow[], records: read
       row,
       record,
       statusKey,
+      stageKey: stageFilterKey(record),
+      outcome: outcomeGroup(row.current.outcome),
+      cities: splitCities(row.application.city),
       channelName: channelById.get(row.application.channelId) ?? '未知渠道',
       staleDays: waiting ? Math.max(0, daysBetween(row.current.occurredOn!, today)) : null,
     }];
   });
 }
 
-export function matchesSearchAndChannel(item: SheetItem, filters: Pick<SheetFilters, 'search' | 'channelId'>): boolean {
+/** Everything except the stage chips, which count over this result. */
+export function matchesSearchAndChannel(item: SheetItem, filters: Pick<SheetFilters, 'search' | 'channelId' | 'outcome' | 'city'>): boolean {
   if (filters.channelId !== ALL && item.row.application.channelId !== filters.channelId) return false;
+  if (filters.outcome !== ALL && item.outcome !== filters.outcome) return false;
+  if (filters.city !== ALL && !item.cities.includes(filters.city)) return false;
   const needle = filters.search.trim().toLocaleLowerCase();
   if (!needle) return true;
   const { company, role, city, notes } = item.row.application;
@@ -68,7 +106,7 @@ export function matchesSearchAndChannel(item: SheetItem, filters: Pick<SheetFilt
 }
 
 export function filterSheetItems(items: readonly SheetItem[], filters: SheetFilters): SheetItem[] {
-  return items.filter(item => matchesSearchAndChannel(item, filters) && (filters.statusKey === ALL || item.statusKey === filters.statusKey));
+  return items.filter(item => matchesSearchAndChannel(item, filters) && (filters.stageKey === ALL || item.stageKey === filters.stageKey));
 }
 
 export function sortSheetItems(items: readonly SheetItem[], sort: SheetSort): SheetItem[] {
@@ -83,18 +121,33 @@ export function sortSheetItems(items: readonly SheetItem[], sort: SheetSort): Sh
   return [...items].sort(compare[sort]);
 }
 
-/** Status chips with counts over the rows that pass search and channel filters. */
+/** Stage chips with counts over the rows that pass the other filters. */
 export function sheetStatusChips(items: readonly SheetItem[], definitions: R1DefinitionsSnapshot, selected: string): Array<{ key: string; label: string; count: number }> {
   const counts = new Map<string, number>();
-  for (const item of items) counts.set(item.statusKey, (counts.get(item.statusKey) ?? 0) + 1);
+  for (const item of items) counts.set(item.stageKey, (counts.get(item.stageKey) ?? 0) + 1);
   if (selected !== ALL && !counts.has(selected)) counts.set(selected, 0);
   return [...counts.entries()]
     .sort(([left], [right]) => quickStatusKeyRank(left, definitions) - quickStatusKeyRank(right, definitions))
-    .map(([key, count]) => ({ key, label: quickStatusKeyLabel(key, definitions), count }));
+    .map(([key, count]) => ({ key, label: stageChipLabel(key, definitions), count }));
+}
+
+/** Stage chips name the stage (简历筛选), since they also hold that stage's failures. */
+function stageChipLabel(key: string, definitions: R1DefinitionsSnapshot): string {
+  if (!key.startsWith('stage:')) return quickStatusKeyLabel(key, definitions);
+  return definitions.stages.find(stage => stage.id === key.slice('stage:'.length))?.name ?? quickStatusKeyLabel(key, definitions);
+}
+
+/** Single cities for the city filter, most used first. */
+export function sheetCities(items: readonly SheetItem[]): Array<{ city: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const item of items) for (const city of item.cities) counts.set(city, (counts.get(city) ?? 0) + 1);
+  return [...counts.entries()].map(([city, count]) => ({ city, count })).sort((left, right) => right.count - left.count || left.city.localeCompare(right.city, 'zh-Hans-CN'));
 }
 
 export interface SheetStats {
+  /** Applications with a recorded submission — the same number as 累计投递 in analytics. */
   total: number;
+  drafts: number;
   companies: number;
   active: number;
   offers: number;
@@ -105,10 +158,11 @@ export interface SheetStats {
 }
 
 export function sheetStats(items: readonly SheetItem[]): SheetStats {
-  const submitted = items.filter(item => item.statusKey !== 'draft');
+  const submitted = items.filter(item => item.row.application.appliedOn !== null);
   const offers = items.filter(item => item.row.current.outcome === 'offer_received' || item.row.current.outcome === 'offer_accepted').length;
   return {
-    total: items.length,
+    total: submitted.length,
+    drafts: items.length - submitted.length,
     companies: new Set(submitted.map(item => companyGroupName(item.row.application.company).toLocaleLowerCase())).size,
     active: submitted.filter(item => item.row.current.outcome === 'active' && item.statusKey !== 'stage:pool').length,
     offers,
