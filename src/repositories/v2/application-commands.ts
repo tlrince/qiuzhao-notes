@@ -67,6 +67,8 @@ export interface ApplicationCommands {
   createApplication(input: CreateApplicationCommandInput): Promise<ApplicationCommandResult<ApplicationV2>>;
   updateFields(input: RevisionedCommandInput & { patch: EditableApplicationFields }): Promise<ApplicationCommandResult<ApplicationV2>>;
   appendProgress(input: RevisionedCommandInput & { command: AppendProgressInput }): Promise<ApplicationCommandResult<ProgressCommandValue>>;
+  /** Appends several statuses in order within one transaction (for example 已投递 then 笔试中). */
+  appendProgressSteps(input: RevisionedCommandInput & { steps: AppendProgressInput[] }): Promise<ApplicationCommandResult<{ application: ApplicationV2; progress: ProgressRecord; changed: boolean }>>;
   correctProgress(input: RevisionedCommandInput & { eventId: string; command: CorrectProgressInput }): Promise<ApplicationCommandResult<ProgressCommandValue & { correctedEventId: string }>>;
   invalidateProgress(input: RevisionedCommandInput & { eventId: string }): Promise<ApplicationCommandResult<{ application: ApplicationV2; progress: ProgressRecord }>>;
   deleteApplication(input: RevisionedCommandInput): Promise<ApplicationCommandResult<{ applicationId: string; removedProgressRecordCount: number; removedScheduleCount: number; removedLegacyHistoryCount: number }>>;
@@ -255,6 +257,23 @@ export function createApplicationCommands(
         syncApplicationProjection(application, result.record, result.duplicate ? application.updatedAt : timestamp);
         return { application, progress: result.record, event: result.event, duplicate: result.duplicate };
       }, value => !value.duplicate);
+    },
+
+    appendProgressSteps(input) {
+      return transact(input.expectedRevision, (snapshot, timestamp) => {
+        requireRule(Array.isArray(input.steps) && input.steps.length > 0, '至少需要记录一条进度');
+        const application = findApplication(snapshot, input.applicationId);
+        let progress = findProgress(snapshot, input.applicationId);
+        let changed = false;
+        for (const step of input.steps) {
+          const result = appendProgressEvent(progress, snapshot.definitions, step, { now: timestamp, id });
+          progress = result.record;
+          changed ||= !result.duplicate;
+        }
+        snapshot.progressRecords[snapshot.progressRecords.findIndex(item => item.applicationId === input.applicationId)] = progress;
+        syncApplicationProjection(application, progress, changed ? timestamp : application.updatedAt);
+        return { application, progress, changed };
+      }, value => value.changed);
     },
 
     correctProgress(input) {

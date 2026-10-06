@@ -19,6 +19,7 @@
     "test:m3import": "npm run build:domain && node --test tests/m3-v2-import-commands.test.mjs",
     "test:m3-lifecycle": "npm run build:domain && node --test tests/m3-v2-lifecycle-commands.test.mjs",
     "test:m3-status-editor": "npm run build:domain && node --test tests/m3-status-editor.test.mjs",
+    "test:quick-status": "npm run build:domain && node --test tests/quick-status.test.mjs",
     "test:workspace-v2": "npm run build:domain && node --test tests/workspace-v2-commands.test.mjs",
     "test:m4definitions": "npm run build:domain && node --test tests/m4-definition-commands.test.mjs",
     "test:r4": "node --experimental-strip-types --test tests/r4-progress-table.test.mjs",
