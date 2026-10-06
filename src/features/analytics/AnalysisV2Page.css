@@ -79,28 +79,28 @@
 .analysis-v2__trend-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .analysis-v2__trend-heading strong { font-size: 12px; font-weight: 500; }
 .analysis-v2__trend-heading span { color: var(--color-muted); font-size: 12px; }
-.analysis-v2__trend-bars { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); align-items: end; gap: 5px; height: 84px; }
+.analysis-v2__trend-bars { position: relative; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); align-items: end; gap: 5px; height: 84px; }
 .analysis-v2__trend-column { display: grid; grid-template-rows: 16px 1fr 16px; justify-items: center; height: 100%; min-width: 0; }
 .analysis-v2__trend-value { color: var(--color-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .analysis-v2__trend-track { display: flex; align-items: end; justify-content: center; width: 100%; height: 100%; }
 .analysis-v2__trend-track i { display: block; width: min(100%, 19px); min-height: 2px; background: #2fa594; border-radius: 2px 2px 0 0; }
-.analysis-v2__trend-label { overflow: hidden; width: 100%; color: var(--color-muted); font-size: 12px; text-align: center; text-overflow: clip; white-space: nowrap; }
+.analysis-v2__trend-label { overflow: visible; width: 100%; color: var(--color-muted); font-size: 12px; text-align: center; text-overflow: clip; white-space: nowrap; }
 .analysis-v2__chart-empty-note { margin-top: 12px; color: var(--color-muted); font-size: 12px; text-align: center; }
 .analysis-v2__channels { display: grid; gap: 0; padding: 18px 20px 20px; }
-.analysis-v2__channel-head,
-.analysis-v2__channel-row { display: grid; grid-template-columns: minmax(68px, .85fr) repeat(3, minmax(0, 1fr)); align-items: center; gap: 10px 18px; }
-.analysis-v2__channel-head { padding-bottom: 9px; border-bottom: 1px solid var(--color-border); color: var(--color-muted); font-size: 12px; }
-.analysis-v2__channel-row { min-height: 62px; border-bottom: 1px solid #efeee9; }
-.analysis-v2__channel-row:last-of-type { border-bottom: 0; }
-.analysis-v2__channel-row > strong { overflow: hidden; font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.analysis-v2__channel-value { display: grid; grid-template-columns: minmax(22px, 1fr) auto; align-items: center; gap: 4px 6px; min-width: 0; }
-.analysis-v2__channel-track { height: 6px; overflow: hidden; background: #f1f0eb; border-radius: 2px; }
-.analysis-v2__channel-track span { display: block; height: 100%; background: #5fb8aa; border-radius: 2px; }
-.analysis-v2__channel-value--interview .analysis-v2__channel-track span { background: #0f766e; }
-.analysis-v2__channel-value--offer .analysis-v2__channel-track span { background: #d4a24c; }
-.analysis-v2__channel-count { min-width: 2.5ch; color: var(--color-ink); font-size: 14px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
-.analysis-v2__channel-value small { grid-column: 1 / 3; color: var(--color-muted); font-size: 12px; text-align: right; white-space: nowrap; }
 .analysis-v2__channels .analysis-v2__chart-footnote { margin-top: 10px; }
+.analysis-v2__channel-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.analysis-v2__channel-table th,
+.analysis-v2__channel-table td { padding: 10px 0 10px 12px; border-bottom: 1px solid #efeee9; text-align: right; vertical-align: top; }
+.analysis-v2__channel-table th:first-child { padding-left: 0; text-align: left; }
+.analysis-v2__channel-table thead th { padding-top: 0; border-bottom-color: var(--color-border); color: var(--color-muted); font-size: 12px; font-weight: 500; }
+.analysis-v2__channel-table thead th:first-child { width: 28%; }
+.analysis-v2__channel-table tbody tr:last-child > * { border-bottom: 0; }
+.analysis-v2__channel-table tbody th { overflow: hidden; color: var(--color-ink); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.analysis-v2__channel-table td strong { display: block; color: var(--color-ink); font-size: 15px; font-weight: 600; line-height: 1.3; }
+.analysis-v2__channel-table td small { display: block; margin-top: 2px; color: var(--color-muted); font-size: 12px; white-space: nowrap; }
+.analysis-v2__channel-table td.is-zero strong { color: #b5b0a5; font-weight: 500; }
+.analysis-v2__channel-share { display: block; height: 4px; margin: 5px 0 0 auto; width: 100%; max-width: 64px; overflow: hidden; background: #eeece5; border-radius: 2px; }
+.analysis-v2__channel-share i { display: block; height: 100%; margin-left: auto; background: #2fa594; border-radius: 2px; }
 .analysis-v2__city-content { display: flex; align-items: center; justify-content: center; gap: 25px; padding: 28px 23px 20px; }
 .analysis-v2__donut { display: grid; place-items: center; width: 148px; height: 148px; flex: 0 0 148px; border-radius: 50%; }
 .analysis-v2__donut > div { display: flex; width: 88px; height: 88px; align-items: center; justify-content: center; flex-direction: column; background: var(--color-paper); border-radius: 50%; }
@@ -149,18 +149,17 @@
   .analysis-v2__heatmap-week { grid-template-rows: repeat(7, 12px); gap: 4px; width: 12px; }
   .analysis-v2__heatmap .analysis-v2__day { width: 12px; height: 12px; }
   .analysis-v2__weekday-labels { grid-template-rows: repeat(7, 12px); gap: 4px; line-height: 12px; }
-  .analysis-v2__trend-column:nth-child(even) .analysis-v2__trend-label { visibility: hidden; }
   .analysis-v2__trend-label { overflow: visible; }
   .analysis-v2__heatmap-footer { gap: 6px 10px; margin-left: 16px; font-size: 12px; }
   .analysis-v2__legend { gap: 2px; }
   .analysis-v2__legend .analysis-v2__day { width: 7px; min-width: 7px; height: 7px; }
-  .analysis-v2__channel-head,
-  .analysis-v2__channel-row { grid-template-columns: minmax(55px, .75fr) repeat(3, minmax(0, 1fr)); gap: 6px; }
   .analysis-v2__channels { padding-inline: 14px; }
-  .analysis-v2__channel-row { min-height: 57px; }
-  .analysis-v2__channel-head { font-size: 12px; }
-  .analysis-v2__channel-row > strong { font-size: 12px; }
-  .analysis-v2__channel-value { gap: 4px; }
   .analysis-v2__city-content { flex-direction: column; gap: 18px; padding: 24px 17px; }
   .analysis-v2__city-list { width: min(100%, 320px); }
+}
+.analysis-v2__channel-table thead th { white-space: nowrap; }
+@media (max-width: 767px) {
+  .analysis-v2__channel-table thead th:first-child { width: 22%; }
+  .analysis-v2__channel-table th,
+  .analysis-v2__channel-table td { padding-left: 6px; }
 }

@@ -30,6 +30,7 @@ button, a, input, select, textarea { touch-action: manipulation; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; }
 h1:focus, main:focus { outline: none; }
 h1, h2, h3, p { margin: 0; }
+small { font-size: 12px; }
 svg { flex-shrink: 0; vertical-align: middle; }
 h1 { font-family: var(--font-sans); font-size: 26px; font-weight: 650; letter-spacing: 0; line-height: 1.35; }
 h2 { font-size: 16px; font-weight: 600; }

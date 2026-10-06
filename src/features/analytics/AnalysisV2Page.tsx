@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { calculateV2Analytics, type V2AnalyticsResult } from '../../domain/v2/analytics.js';
 import { useV2Data } from '../../app/V2DataContext.js';
 import { Button, ChartCard, EmptyState, PageHeader } from '../../shared/ui/components.js';
@@ -46,13 +46,30 @@ function ActivityCharts({ result, today }: { result: V2AnalyticsResult; today: s
   const weeks = useMemo(() => buildActivityWeeks(result, today), [result, today]);
   // Follow the pointer and describe the day under it immediately (native titles lag).
   const [hover, setHover] = useState<{ text: string; x: number; y: number } | null>(null);
-  const trackPointer = (event: React.PointerEvent<HTMLDivElement>) => {
-    const cell = (event.target as HTMLElement).closest<HTMLElement>('[data-date]');
-    if (!cell) { setHover(null); return; }
+  const [trendHover, setTrendHover] = useState<{ text: string; x: number; y: number } | null>(null);
+  const pointerTracker = (set: typeof setHover) => (event: React.PointerEvent<HTMLDivElement>) => {
+    const cell = (event.target as HTMLElement).closest<HTMLElement>('[data-label]');
+    if (!cell) { set(null); return; }
     const box = event.currentTarget.getBoundingClientRect();
     const cellBox = cell.getBoundingClientRect();
-    setHover({ text: cell.dataset.label ?? '', x: cellBox.left - box.left + cellBox.width / 2, y: cellBox.top - box.top });
+    // Keep the tip inside the chart near the left and right edges.
+    const center = cellBox.left - box.left + cellBox.width / 2;
+    set({ text: cell.dataset.label ?? '', x: Math.min(Math.max(center, 72), Math.max(72, box.width - 72)), y: cellBox.top - box.top });
   };
+  const trackPointer = pointerTracker(setHover);
+  // Week labels are shown every 1, 2 or 3 columns, depending on how much room each column gets.
+  const trendRef = useRef<HTMLDivElement>(null);
+  const [labelStep, setLabelStep] = useState(2);
+  useEffect(() => {
+    const element = trendRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      const column = (entry?.contentRect.width ?? 0) / 12;
+      setLabelStep(column >= 40 ? 1 : column >= 20 ? 2 : 3);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const totals = useMemo(() => weeklyActivityTotals(weeks), [weeks]);
   const maxDaily = Math.max(0, ...weeks.flat().filter(cell => !cell.disabled).map(cell => cell.count));
   const maxWeekly = Math.max(1, ...totals);
@@ -82,16 +99,18 @@ function ActivityCharts({ result, today }: { result: V2AnalyticsResult; today: s
       </div>
       <div className="analysis-v2__weekly-trend" aria-label="近 12 周每周投递数">
         <div className="analysis-v2__trend-heading"><strong>每周投递</strong><span>按周汇总，同一日多条分别计数</span></div>
-        <div className="analysis-v2__trend-bars">
+        <div className="analysis-v2__trend-bars" ref={trendRef} onPointerMove={pointerTracker(setTrendHover)} onPointerLeave={() => setTrendHover(null)}>
+          {trendHover && <div className="analysis-v2__heat-tip" style={{ left: trendHover.x, top: trendHover.y }} role="tooltip">{trendHover.text}</div>}
           {weeks.map((week, index) => {
             const total = totals[index] ?? 0;
             const height = total === 0 ? 2 : Math.max(7, (total / maxWeekly) * 100);
             const label = week[0]?.date ?? '';
             const rangeEnd = week.at(-1)?.date ?? label;
-            return <div className="analysis-v2__trend-column" key={label} title={`${label} 至 ${rangeEnd}：${total} 次投递`}>
+            const short = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+            return <div className="analysis-v2__trend-column" key={label} data-label={`${short(label)} – ${short(rangeEnd)}：${total} 次投递`} aria-label={`${label} 至 ${rangeEnd}：${total} 次投递`}>
               <span className="analysis-v2__trend-value">{total || ''}</span>
               <div className="analysis-v2__trend-track"><i style={{ height: `${height}%` }} /></div>
-              <span className="analysis-v2__trend-label">{label.slice(5).replace('-', '/')}</span>
+              <span className="analysis-v2__trend-label" aria-hidden="true">{index % labelStep === 0 ? short(label) : ''}</span>
             </div>;
           })}
         </div>
@@ -112,42 +131,49 @@ function StageReach({ result }: { result: V2AnalyticsResult }) {
           <span style={{ width: `${Math.max(2, (stage.touchCount / maxCount) * 100)}%` }} />
         </div>
         <div className="analysis-v2__stage-value"><strong>{stage.touchCount}</strong><span>{formatAnalysisRate(stage.rate)}</span></div>
-        <small>{stage.visitCount} 次经历</small>
+        {stage.visitCount !== stage.touchCount ? <small>共 {stage.visitCount} 次经历（含重复进入）</small> : null}
       </div>)}
       <p className="analysis-v2__chart-footnote">比例 = 触达岗位 ÷ 已投递岗位；若记录了尚无投递日期的后续经历，比例可能超过 100%。</p>
     </div> : <EmptyState compact icon="board" title="还没有实际阶段触达" description="记录一次真实状态后，对应环节会显示在这里；未经历的模板环节不会预先出现。" />}
   </ChartCard>;
 }
 
-const channelMetricDefinitions = [
-  { key: 'submittedCount', label: '投递', tone: 'submitted' },
-  { key: 'interviewCount', label: '人工面试', tone: 'interview' },
-  { key: 'offerCount', label: 'Offer', tone: 'offer' },
+const channelRateColumns = [
+  { key: 'aiInterviewCount', label: 'AI 面' },
+  { key: 'interviewCount', label: '人工面试' },
+  { key: 'offerCount', label: 'Offer' },
 ] as const;
 
+/** One row per channel; every cell is a count with the same caption line (share or conversion rate) underneath. */
 function ChannelPerformance({ result }: { result: V2AnalyticsResult }) {
   const channels = result.channels.filter(channel => channel.submittedCount + channel.interviewCount + channel.aiInterviewCount + channel.offerCount > 0);
-  const max = Math.max(1, ...channels.flatMap(channel => [channel.submittedCount, channel.interviewCount, channel.offerCount]));
-  return <ChartCard title="渠道表现" subtitle="投递、人工面试与 Offer 按岗位去重；AI 面单独注明。" className="analysis-v2__channel-card">
+  const totalSubmitted = channels.reduce((sum, channel) => sum + channel.submittedCount, 0);
+  const rate = (count: number, base: number) => base === 0 ? null : (count / base) * 100;
+  return <ChartCard title="渠道表现" subtitle="按岗位去重；转化率 = 该渠道进入此环节的岗位 ÷ 该渠道已投递岗位。" className="analysis-v2__channel-card">
     {channels.length ? <div className="analysis-v2__channels">
-      <div className="analysis-v2__channel-head"><span>渠道</span>{channelMetricDefinitions.map(item => <span key={item.key}>{item.label}</span>)}</div>
-      {channels.map(channel => <div className="analysis-v2__channel-row" key={channel.channelId}>
-        <strong title={channel.name}>{channel.name}</strong>
-        {channelMetricDefinitions.map(item => {
-          const count = channel[item.key];
-          const rate = item.key === 'submittedCount' ? null : channel.submittedCount === 0 ? null : (count / channel.submittedCount) * 100;
-          const title = item.key === 'submittedCount'
-            ? `${channel.name}：${count} 个已投递岗位`
-            : `${channel.name}：${count} 个岗位${item.key === 'interviewCount' && channel.aiInterviewCount ? `，另有 ${channel.aiInterviewCount} 个 AI 面岗位` : ''}；样本 ${channel.submittedCount} 个已投递岗位；转化率 ${formatAnalysisRate(rate)}`;
-          return <div className={`analysis-v2__channel-value analysis-v2__channel-value--${item.tone}`} key={item.key} title={title}>
-            <div className="analysis-v2__channel-track"><span style={{ width: `${Math.max(count > 0 ? 2 : 0, (count / max) * 100)}%` }} /></div>
-            <span className="analysis-v2__channel-count">{count}</span>
-            {/* Every cell keeps a second line so the three columns stay aligned. */}
-            <small>{item.key === 'submittedCount' ? '\u00a0' : `${formatAnalysisRate(rate)}${item.key === 'interviewCount' && channel.aiInterviewCount > 0 ? ` · AI 面 ${channel.aiInterviewCount}` : ''}`}</small>
-          </div>;
-        })}
-      </div>)}
-      <p className="analysis-v2__chart-footnote">转化率的样本数为该渠道的已投递岗位；草稿不会计入渠道转化率。</p>
+      <table className="analysis-v2__channel-table">
+        <thead><tr><th scope="col">渠道</th><th scope="col">投递</th>{channelRateColumns.map(column => <th scope="col" key={column.key}>{column.label}</th>)}</tr></thead>
+        <tbody>{channels.map(channel => {
+          const share = rate(channel.submittedCount, totalSubmitted);
+          return <tr key={channel.channelId}>
+            <th scope="row" title={channel.name}>{channel.name}</th>
+            <td title={`${channel.name}：${channel.submittedCount} 个已投递岗位，占全部投递 ${formatAnalysisRate(share)}`}>
+              <strong>{channel.submittedCount}</strong>
+              <span className="analysis-v2__channel-share"><i style={{ width: `${share ?? 0}%` }} /></span>
+              <small>占 {formatAnalysisRate(share)}</small>
+            </td>
+            {channelRateColumns.map(column => {
+              const count = channel[column.key];
+              const conversion = rate(count, channel.submittedCount);
+              return <td key={column.key} className={count === 0 ? 'is-zero' : undefined} title={`${channel.name}：${count} 个岗位进入${column.label}；转化率 ${formatAnalysisRate(conversion)}`}>
+                <strong>{count}</strong>
+                <small>{formatAnalysisRate(conversion)}</small>
+              </td>;
+            })}
+          </tr>;
+        })}</tbody>
+      </table>
+      <p className="analysis-v2__chart-footnote">草稿不计入渠道统计。</p>
     </div> : <EmptyState compact icon="chart" title="还没有渠道样本" description="已投递记录会按真实渠道归组；没有填写渠道的记录会单独列出。" />}
   </ChartCard>;
 }
