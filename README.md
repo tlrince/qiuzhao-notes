@@ -13,8 +13,8 @@
 
 适用于 macOS 13 及以上。
 
-1. 到本仓库的 [Releases](../../releases) 页面下载最新的 `秋招手记_x.y.z_aarch64.dmg`（Apple 芯片）或 `_x64.dmg`（Intel 芯片）。
-   不确定是哪种芯片：点左上角  →「关于本机」，「芯片」写着 Apple M 系列就是 Apple 芯片。
+1. 到本仓库的 [Releases](../../releases/latest) 页面下载最新的 `QiuzhaoNotes_x.y.z_*.dmg`。
+   文件名是 `universal` 的同时支持 Apple 芯片和 Intel 芯片；`aarch64` 只支持 Apple 芯片（点左上角  →「关于本机」，「芯片」写着 Apple M 系列就是）。
 2. 双击打开 dmg，把「秋招手记」拖进「应用程序」文件夹。
 3. **第一次打开**：应用没有经过 Apple 公证，直接双击会提示“无法验证开发者”。按下面任意一种方式打开一次即可，之后就能正常双击：
    - 在「应用程序」里**右键点「秋招手记」→ 打开 → 再点「打开」**；或
@@ -26,7 +26,9 @@
    xattr -cr /Applications/秋招手记.app
    ```
 
-更新版本时，下载新的 dmg 覆盖安装即可，原来的数据不会丢失。
+**更新**：有新版本时，应用启动几秒后右下角会提示「发现新版本」，点「更新并重启」就会自动下载、安装并重新打开；也可以在「数据与设置 → 关于与更新」里手动检查。你也可以随时下载新的 dmg 覆盖安装。
+
+不论哪种方式，**数据都不会丢**：数据保存在应用之外的独立目录里，更新只替换应用本身。
 
 ### 方式二：网页版
 
@@ -173,7 +175,23 @@ npm run build
 npm run build:mac:dmg
 ```
 
-生成的安装包在 `src-tauri/target/release/bundle/dmg/`，可以上传到 GitHub Releases 分享给别人。在 Apple 芯片的 Mac 上默认打出 Apple 芯片版本；要给 Intel 的 Mac 用，需要在 Intel 机器上打包，或安装 `x86_64-apple-darwin` 目标后加 `-- --target x86_64-apple-darwin`。
+生成的安装包在 `src-tauri/target/release/bundle/dmg/`。
+
+### 发布新版本（维护者）
+
+应用内更新依赖 GitHub Releases 上的签名文件，发布步骤：
+
+1. 把 `package.json` 和 `src-tauri/tauri.conf.json` 里的 `version` 改成新的版本号（如 `0.2.0`），提交并合并到 `main`。
+2. 运行：
+
+   ```bash
+   npm run release -- --notes "这次更新了什么" --publish
+   ```
+
+   脚本会打包、用更新签名密钥签名、生成 `latest.json`，并创建 `v0.2.0` 的 Release。已安装的应用下次启动就会提示更新。
+
+- 更新签名密钥在 `~/.tauri/qiuzhao-notes.key`，**不要提交到仓库，并请另外备份**。密钥丢了的话，已安装的应用无法自动更新到之后用新密钥签名的版本，只能手动下载安装一次。
+- 安装了 Intel 目标（`rustup target add x86_64-apple-darwin`）时，脚本会打出同时支持两种芯片的 universal 版本。
 
 > 不要修改 `src-tauri/tauri.conf.json` 里的 `identifier`，否则应用会找不到之前保存的数据。
 

@@ -17,6 +17,7 @@ import { ChannelSettings, SeasonList } from '../features/settings/WorkspaceSetti
 import { PlatformPreview } from './PlatformPreview.js';
 import { useBackupExport } from './useBackupExport.js';
 import { MenuActions } from './MenuActions.js';
+import { UpdateNotice, useAppUpdate } from './UpdateNotice.js';
 import { CreateApplicationDrawer } from '../features/applications/ApplicationDrawers.js';
 import { ToastRegion, useToasts } from '../shared/ui/Toast.js';
 import type { BackupRestorePreview } from '../repositories/v2/backup-commands.js';
@@ -197,11 +198,33 @@ function Settings() {
         {recoveryToRestore && <div className="restore-preview" role="status"><h3>恢复副本预览</h3><p>{recoveryToRestore.seasonNames.join('、') || recoveryToRestore.workspaceName} · 来源 v{recoveryToRestore.sourceSchemaVersion} · 修订 {recoveryToRestore.sourceRevision}</p><p>{recoveryToRestore.seasonCount} 个招聘季 · {recoveryToRestore.applicationCount} 条投递</p><p>恢复后，当前快照会在同一事务中另存为新的恢复副本。</p><Button type="button" disabled={busy || backupBusy} onClick={() => setConfirmRecoveryRestore(true)}>确认恢复此副本</Button></div>}
       </ChartCard>
     </div>
+    <div className="settings-backup-section"><AboutCard /></div>
     <div className="page-actions"><Link className="button button--secondary" to="/settings/definitions">管理状态与环节<Icon name="arrow" size={16} /></Link></div>
     <ConfirmDialog open={confirmRestore} onCancel={() => setConfirmRestore(false)} onConfirm={() => void restoreBackup()} title="整体替换当前工作空间？" description={`将用「${restorePreview?.workspaceName ?? '未知工作空间'}」中的 ${restorePreview?.seasonNames.join('、') || `${restorePreview?.seasonCount ?? 0} 个招聘季`} 替换目前 ${snapshot.seasons.length} 个招聘季和 ${snapshot.applications.length} 条投递。备份内包含 ${restorePreview?.applicationCount ?? 0} 条投递、${restorePreview?.progressEventCount ?? 0} 条进度记录和 ${restorePreview?.scheduleCount ?? 0} 个日程；当前数据会由存储层保留为恢复副本。`} confirmLabel="整体恢复" cancelLabel="返回检查" />
     <ConfirmDialog open={confirmRecoveryRestore} onCancel={() => setConfirmRecoveryRestore(false)} onConfirm={() => void restoreSavedCopy()} title="用这个恢复副本替换当前数据？" description={recoveryToRestore ? `将恢复「${recoveryToRestore.seasonNames.join('、') || recoveryToRestore.workspaceName}」v${recoveryToRestore.sourceSchemaVersion}（修订 ${recoveryToRestore.sourceRevision}），包含 ${recoveryToRestore.seasonCount} 个招聘季和 ${recoveryToRestore.applicationCount} 条投递。当前快照会在同一事务中另存为一个新副本。` : ''} confirmLabel="恢复此副本" cancelLabel="返回检查" />
     <ConfirmDialog open={confirmRecoveryDelete} onCancel={() => { setConfirmRecoveryDelete(false); setRecoveryToDelete(null); }} onConfirm={() => void deleteSavedCopy()} title="永久删除这份恢复副本？" description={recoveryToDelete ? `将只删除「${recoveryToDelete.seasonNames.join('、') || recoveryToDelete.workspaceName}」v${recoveryToDelete.sourceSchemaVersion}（恢复副本 ID：${recoveryToDelete.id}；来源修订 ${recoveryToDelete.sourceRevision}），包含 ${recoveryToDelete.seasonCount} 个招聘季和 ${recoveryToDelete.applicationCount} 条投递。删除后无法从本机恢复；当前数据和其他恢复副本不受影响。` : ''} confirmLabel="永久删除此副本" cancelLabel="保留此副本" />
   </ScaffoldPage>;
+}
+function AboutCard() {
+  const { platform } = usePlatform();
+  const { supported, state, check, install } = useAppUpdate();
+  const [version, setVersion] = useState('');
+  useEffect(() => { void platform.getAppVersion().then(setVersion, () => setVersion('')); }, [platform]);
+  const status = state.kind === 'checking' ? '正在检查…'
+    : state.kind === 'latest' ? '已经是最新版本。'
+    : state.kind === 'available' ? `有新版本 ${state.update.version} 可以安装。`
+    : state.kind === 'installing' ? `正在下载并安装 ${state.update.version}，完成后会自动重启…`
+    : state.kind === 'error' ? state.message : '';
+  return <ChartCard title="关于与更新" subtitle={supported ? '新版本发布后，应用启动时会提示更新；更新不会影响已保存的数据。' : '网页版刷新页面即可使用最新版本。'}>
+    <div className="settings-about">
+      <p>当前版本：{version || '未知'}</p>
+      {supported ? <div className="page-actions">
+        <Button type="button" variant="secondary" disabled={state.kind === 'checking' || state.kind === 'installing'} onClick={() => void check()}>检查更新</Button>
+        {state.kind === 'available' ? <Button type="button" onClick={() => install(state.update)}>更新并重启</Button> : null}
+      </div> : null}
+      {status ? <p className={state.kind === 'error' ? 'platform-error' : 'quiet-note'} role="status">{status}</p> : null}
+    </div>
+  </ChartCard>;
 }
 function DefinitionSettings() {
   const { snapshot, runDefinitionCommand } = useV2Data();
@@ -280,5 +303,5 @@ export function App() {
     void runWorkspaceCommand((commands, expectedRevision) => commands.setActiveSeason({ expectedRevision, seasonId })).catch(cause => setWorkspaceError(cause instanceof Error ? cause.message : '切换招聘季失败'));
   };
   const workspace = { ...snapshot.workspace, activeSeasonId };
-  return <AppShell workspace={workspace} seasons={snapshot.seasons.filter(season => season.archivedAt === null)} submittedCount={submittedCount} saveStatus={saveStatus as SaveStatus} saveError={lastError} onDismissSaveError={dismissError} onSeasonChange={onSeasonChange}><MenuActions seasonId={activeSeasonId} />{workspaceError && <p className="platform-error" role="alert">{workspaceError}</p>}<ErrorBoundary resetKey={location.pathname} fallback={(error, reset) => <PageError error={error} reset={reset} />}><Routes><Route path="/" element={<DefaultRoute />} /><Route path="/analytics" element={<AnalyticsRoute seasonId={activeSeasonId} onSeasonChange={onSeasonChange} />} /><Route path="/overview" element={<Overview />} /><Route path="/applications" element={<ApplicationsV2Page seasonId={activeSeasonId} />} /><Route path="/board" element={<ProgressBoardV2Page seasonId={activeSeasonId} />} /><Route path="/settings" element={<Settings />} /><Route path="/settings/definitions" element={<DefinitionSettings />} /><Route path="/design-system" element={<DesignSystem preview={preview} onPreviewChange={setPreview} />} /><Route path="*" element={<ScaffoldPage eyebrow="FIND YOUR WAY" title="这一页，还没有留下记录。" description="页面可能不存在，回到熟悉的工作空间继续吧。"><Link className="button button--primary" to="/analytics">返回深度分析<Icon name="arrow" size={16} /></Link></ScaffoldPage>} /></Routes></ErrorBoundary></AppShell>;
+  return <AppShell workspace={workspace} seasons={snapshot.seasons.filter(season => season.archivedAt === null)} submittedCount={submittedCount} saveStatus={saveStatus as SaveStatus} saveError={lastError} onDismissSaveError={dismissError} onSeasonChange={onSeasonChange}><MenuActions seasonId={activeSeasonId} /><UpdateNotice />{workspaceError && <p className="platform-error" role="alert">{workspaceError}</p>}<ErrorBoundary resetKey={location.pathname} fallback={(error, reset) => <PageError error={error} reset={reset} />}><Routes><Route path="/" element={<DefaultRoute />} /><Route path="/analytics" element={<AnalyticsRoute seasonId={activeSeasonId} onSeasonChange={onSeasonChange} />} /><Route path="/overview" element={<Overview />} /><Route path="/applications" element={<ApplicationsV2Page seasonId={activeSeasonId} />} /><Route path="/board" element={<ProgressBoardV2Page seasonId={activeSeasonId} />} /><Route path="/settings" element={<Settings />} /><Route path="/settings/definitions" element={<DefinitionSettings />} /><Route path="/design-system" element={<DesignSystem preview={preview} onPreviewChange={setPreview} />} /><Route path="*" element={<ScaffoldPage eyebrow="FIND YOUR WAY" title="这一页，还没有留下记录。" description="页面可能不存在，回到熟悉的工作空间继续吧。"><Link className="button button--primary" to="/analytics">返回深度分析<Icon name="arrow" size={16} /></Link></ScaffoldPage>} /></Routes></ErrorBoundary></AppShell>;
 }

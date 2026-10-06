@@ -4,6 +4,7 @@ export type WindowAction = 'close' | 'quit';
 /** Native menu commands forwarded to the web view. */
 export type MenuAction = 'new' | 'backup' | 'restore' | 'find';
 export type Unsubscribe = () => void;
+export interface AvailableUpdate { version: string; notes: string | null }
 export interface PlatformServices {
   readonly kind: PlatformKind;
   readonly storageLabel: string;
@@ -17,4 +18,8 @@ export interface PlatformServices {
   subscribeSettingsNavigation(listener: () => void): Promise<Unsubscribe>;
   subscribeMenuAction(listener: (action: MenuAction) => void): Promise<Unsubscribe>;
   finishWindowAction(action: WindowAction): Promise<void>;
+  /** Mac only: a newer signed release, or null when up to date (always null on the web). */
+  checkForUpdate(): Promise<AvailableUpdate | null>;
+  /** Mac only: download, install and restart into the newer release. */
+  installUpdate(): Promise<void>;
 }

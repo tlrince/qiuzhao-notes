@@ -45,6 +45,11 @@ test('窗口生命周期 Mock 可以取消订阅，恢复路由不能指向外�
   const menu = []; const offMenu = await platform.subscribeMenuAction(action => menu.push(action));
   platform.emitMenuAction('new'); platform.emitMenuAction('find'); offMenu(); platform.emitMenuAction('backup');
   assert.deepEqual(menu, ['new', 'find']);
+  assert.equal(await platform.checkForUpdate(), null);
+  await assert.rejects(platform.installUpdate(), /最新版本/);
+  const outdated = createMockPlatform({ kind: 'macos', update: { version: '0.2.0', notes: '修复' } });
+  assert.deepEqual(await outdated.checkForUpdate(), { version: '0.2.0', notes: '修复' });
+  await outdated.installUpdate(); assert.deepEqual(outdated.installedUpdates, ['0.2.0']);
   await platform.finishWindowAction('close'); assert.deepEqual(platform.finishedActions, ['close']);
   await platform.saveLastRoute('/applications?stage=submitted'); assert.equal(await platform.loadLastRoute(), '/applications?stage=submitted');
   await assert.rejects(platform.saveLastRoute('https://example.com'), { code: 'VALIDATION' });

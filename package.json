@@ -1,6 +1,6 @@
 {
   "name": "autumn-applications",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -48,6 +48,7 @@
     "dev:mac": "node scripts/tauri.mjs dev",
     "build:mac": "node scripts/tauri.mjs build --bundles app",
     "build:mac:dmg": "node scripts/tauri.mjs build --bundles dmg",
+    "release": "node scripts/release.mjs",
     "test:mac": "node scripts/tauri.mjs test"
   },
   "devDependencies": {

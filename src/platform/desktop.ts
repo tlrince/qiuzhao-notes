@@ -1,4 +1,4 @@
-import type { PlatformServices } from './contracts.js';
+import type { AvailableUpdate, PlatformServices } from './contracts.js';
 import { validateBackupName, validateBackupSize, validateExternalUrl, validateRoute } from './validation.js';
 /** The native modules are evaluated only after desktop platform selection. */
 export function createDesktopPlatform(): PlatformServices {
@@ -30,5 +30,7 @@ export function createDesktopPlatform(): PlatformServices {
       return listen<unknown>('menu-action', ({ payload }) => { if (payload === 'new' || payload === 'backup' || payload === 'restore' || payload === 'find') listener(payload); });
     },
     async finishWindowAction(action) { await invoke('finish_window_action', { action }); },
+    checkForUpdate() { return invoke<AvailableUpdate | null>('check_for_update'); },
+    async installUpdate() { await invoke('install_update'); },
   };
 }

@@ -12,6 +12,7 @@ use tauri::{
 };
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Default)]
 struct Lifecycle {
@@ -74,6 +75,46 @@ fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
 #[tauri::command]
 fn get_app_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
+}
+
+#[derive(serde::Serialize)]
+struct AvailableUpdate {
+    version: String,
+    notes: Option<String>,
+}
+
+/// Asks the release feed whether a newer signed build exists.
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<Option<AvailableUpdate>, String> {
+    let update = app
+        .updater()
+        .map_err(|error| error.to_string())?
+        .check()
+        .await
+        .map_err(|error| format!("检查更新失败：{error}"))?;
+    Ok(update.map(|update| AvailableUpdate {
+        version: update.version,
+        notes: update.body,
+    }))
+}
+
+/// Downloads, verifies and installs the newer build, then restarts into it.
+/// The data directory lives outside the app bundle, so it is untouched.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|error| error.to_string())?
+        .check()
+        .await
+        .map_err(|error| format!("检查更新失败：{error}"))?
+        .ok_or_else(|| "已经是最新版本".to_string())?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|error| format!("更新安装失败：{error}"))?;
+    app.state::<Lifecycle>().quitting.store(true, Ordering::SeqCst);
+    app.restart();
 }
 
 #[tauri::command]
@@ -298,11 +339,14 @@ pub fn run() {
         .manage(Lifecycle::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             read_backup_file,
             save_backup_file,
             open_external,
             get_app_version,
+            check_for_update,
+            install_update,
             load_last_route,
             save_last_route,
             finish_window_action,

@@ -37,5 +37,7 @@ export function createWebPlatform(options: { version?: string } = {}): PlatformS
     async loadLastRoute() { return null; }, async saveLastRoute() {},
     async subscribeWindowAction() { return () => {}; }, async subscribeSettingsNavigation() { return () => {}; }, async subscribeMenuAction() { return () => {}; },
     async finishWindowAction() {},
+    async checkForUpdate() { return null; },
+    async installUpdate() { throw new Error('网页版刷新页面即可使用最新版本'); },
   };
 }
