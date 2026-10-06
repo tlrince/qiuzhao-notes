@@ -1,0 +1,244 @@
+import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+
+const TEST_SEASON = 'E2E 2026 秋招';
+const TEST_COMPANY = 'E2E 示例公司';
+const TEST_ROLE = '质量保障工程师';
+
+test('empty v1 browser database migrates on cold start and v2 data is shared across routes', async ({ page }) => {
+  // Give the test page the app's origin without loading the app bundle. This lets us
+  // clear only this ephemeral Playwright context before the first application boot.
+  await page.route('**/__pw-cleanup', route => route.fulfill({
+    status: 200,
+    contentType: 'text/html; charset=utf-8',
+    body: '<!doctype html><html><head><title>Playwright storage cleanup</title></head><body>isolated test context</body></html>',
+  }));
+  await page.goto('/__pw-cleanup');
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase('autumn-notes-v1');
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error ?? new Error('Could not clear test IndexedDB'));
+    request.onblocked = () => reject(new Error('Test IndexedDB deletion was blocked'));
+  }));
+  await page.unroute('**/__pw-cleanup');
+
+  // First route load must perform the empty v1 -> v2 initialization before mounting.
+  await page.goto('/analytics');
+  await expect(page.getByRole('heading', { name: '从数据里，找到方向。' })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+
+  const initialDatabase = await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('autumn-notes-v1');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error ?? new Error('Could not inspect test IndexedDB'));
+    });
+    try {
+      const state = await new Promise<unknown>((resolve, reject) => {
+        const request = database.transaction('meta', 'readonly').objectStore('meta').get('state');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('Could not read v2 metadata'));
+      });
+      return { version: database.version, state };
+    } finally {
+      database.close();
+    }
+  });
+  expect(initialDatabase.version).toBe(2);
+  expect(initialDatabase.state).toMatchObject({ schemaVersion: 2, physicalVersion: 2 });
+
+  await page.getByRole('link', { name: '数据与设置' }).click();
+  await expect(page.getByRole('heading', { name: '管理你的工作空间。' })).toBeVisible();
+  await page.getByLabel('名称').fill(TEST_SEASON);
+  await page.getByLabel('开始日期').fill('2026-07-01');
+  await page.getByLabel('结束日期').fill('2026-12-31');
+  await page.getByLabel('投递目标').fill('12');
+  await page.getByRole('button', { name: '创建并设为当前' }).click();
+  await expect(page.getByText('招聘季已创建并设为当前招聘季。')).toBeVisible();
+  const desktopSeasonPicker = page.locator('#season-desktop');
+  await expect(desktopSeasonPicker).toHaveValue(/.+/);
+  await expect(desktopSeasonPicker.locator('option:checked')).toHaveText(TEST_SEASON);
+
+  await page.getByRole('link', { name: '投递管理' }).click();
+  await expect(page.getByRole('heading', { name: '投递记录' })).toBeVisible();
+  await page.getByRole('button', { name: /新建草稿/ }).first().click();
+  const createDraftDialog = page.getByRole('dialog', { name: '新建投递草稿' });
+  await expect(createDraftDialog).toBeVisible();
+  await createDraftDialog.getByLabel('公司').fill(TEST_COMPANY);
+  await createDraftDialog.getByLabel('岗位').fill(TEST_ROLE);
+  await createDraftDialog.getByRole('button', { name: '创建空进度草稿' }).click();
+  await expect(page.getByText('已创建一条尚未记录进度的草稿。')).toBeVisible();
+  const applicationRow = page.getByRole('row', { name: new RegExp(`${TEST_COMPANY}.*${TEST_ROLE}`) });
+  await expect(applicationRow).toContainText('待投递');
+  await expect(applicationRow).toContainText('空进度');
+
+  await page.getByRole('link', { name: '进度看板' }).click();
+  await expect(page.getByText(TEST_COMPANY)).toBeVisible();
+  await expect(page.getByRole('button', { name: new RegExp(`修改${TEST_COMPANY}的状态，当前待投递`) })).toBeVisible();
+  const progressScroller = page.getByRole('region', { name: '可横向滚动的进度表' });
+  const urlHeader = page.getByRole('columnheader', { name: /投递网址/ });
+  const urlCell = page.locator('tbody .progress-table__url').first();
+  await urlCell.evaluate(element => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await expect(urlCell).toHaveClass(/progress-table__cell--selected/);
+  await page.getByRole('heading', { name: '每一段经历，都有迹可循。' }).click();
+  await expect(urlCell).not.toHaveClass(/progress-table__cell--selected/);
+  await urlCell.evaluate(element => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await expect(urlCell).toHaveClass(/progress-table__cell--selected/);
+  await progressScroller.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+  const [urlHeaderBounds, urlCellBounds, urlCellPosition] = await Promise.all([
+    urlHeader.boundingBox(),
+    urlCell.boundingBox(),
+    urlCell.evaluate(element => getComputedStyle(element).position),
+  ]);
+  expect(urlHeaderBounds).not.toBeNull();
+  expect(urlCellBounds).not.toBeNull();
+  expect(urlCellPosition).toBe('sticky');
+  expect(Math.abs(urlCellBounds!.x - urlHeaderBounds!.x)).toBeLessThan(1);
+  const currentColumnResizer = page.getByRole('separator', { name: '调整当前状态列宽' });
+  const currentColumnWidth = Number(await currentColumnResizer.getAttribute('aria-valuenow'));
+  await currentColumnResizer.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(currentColumnResizer).toHaveAttribute('aria-valuenow', String(currentColumnWidth + 16));
+  await expect(page.getByText('已保存到此浏览器', { exact: true })).toBeVisible();
+
+  await page.getByRole('link', { name: '深度分析' }).click();
+  await expect(page.getByText('数据洞察 · 1 条岗位记录', { exact: true })).toBeVisible();
+
+  await page.getByRole('link', { name: '数据总览' }).click();
+  await expect(page.getByRole('heading', { name: /每一步，都算数/ })).toBeVisible();
+  await expect(page.getByText(TEST_COMPANY)).toBeVisible();
+
+  // The same data should survive a browser reload and a fresh route mount.
+  await page.reload();
+  await expect(page.getByText(TEST_COMPANY)).toBeVisible();
+  await page.goto('/board');
+  await expect(page.getByRole('separator', { name: '调整当前状态列宽' })).toHaveAttribute('aria-valuenow', String(currentColumnWidth + 16));
+});
+
+test('M8 settings exports a complete v2 backup, previews it, and atomically restores it after confirmation', async ({ page }) => {
+  await page.goto('/settings');
+  await page.getByLabel('名称').fill('M8 备份招聘季 A');
+  await page.getByRole('button', { name: '创建并设为当前' }).click();
+  await expect(page.getByText('招聘季已创建并设为当前招聘季。')).toBeVisible();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出完整备份' }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^秋招看板备份_\d{4}-\d{2}-\d{2}\.json$/);
+  const exportedText = await readFile(await download.path(), 'utf8');
+  const envelope = JSON.parse(exportedText) as { format: string; schemaVersion: number; data: { seasons: unknown[]; applications: unknown[]; progressRecords: unknown[] } };
+  expect(envelope).toMatchObject({ format: 'autumn-applications', schemaVersion: 2 });
+  expect(envelope.data.seasons).toHaveLength(1);
+  expect(envelope.data.applications).toHaveLength(0);
+  expect(envelope.data.progressRecords).toHaveLength(0);
+
+  await page.getByLabel('名称').fill('M8 备份招聘季 B');
+  await page.getByRole('button', { name: '创建并设为当前' }).click();
+  await expect(page.getByText('M8 备份招聘季 B · 当前')).toBeVisible();
+
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '选择备份并预览' }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({ name: download.suggestedFilename(), mimeType: 'application/json', buffer: Buffer.from(exportedText) });
+  await expect(page.getByRole('heading', { name: '备份预览' })).toBeVisible();
+  await expect(page.locator('.restore-preview')).toContainText('来源版本 v2');
+  await expect(page.locator('.restore-preview')).toContainText('1 个招聘季 · 0 条投递');
+
+  await page.getByRole('button', { name: '确认整体恢复' }).click();
+  const confirm = page.getByRole('dialog', { name: '整体替换当前工作空间？' });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: '整体恢复' }).click();
+  await expect(page.getByText('已从 v2 备份恢复 1 个招聘季、0 条投递。')).toBeVisible();
+  await expect(page.getByText('M8 备份招聘季 A · 当前')).toBeVisible();
+  await expect(page.locator('.settings-grid .overview-list').getByText('M8 备份招聘季 B')).toHaveCount(0);
+
+  const recoveryList = page.locator('.recovery-list');
+  const recoveryCapacity = page.getByTestId('recovery-capacity');
+  await expect(recoveryList).toContainText('M8 备份招聘季 A、M8 备份招聘季 B · v2');
+  await recoveryList.getByRole('button', { name: '预览并恢复' }).click();
+  await expect(page.getByRole('heading', { name: '恢复副本预览' })).toBeVisible();
+  const recoveryConfirm = page.getByRole('dialog', { name: '用这个恢复副本替换当前数据？' });
+  await expect(recoveryConfirm).toBeVisible();
+  await expect(recoveryConfirm).toContainText('当前快照会在同一事务中另存为一个新副本');
+  await recoveryConfirm.getByRole('button', { name: '恢复此副本' }).click();
+  await expect(page.getByText(/已恢复「M8 备份招聘季 A、M8 备份招聘季 B」的 v2 恢复副本/)).toBeVisible();
+  await expect(page.getByText('M8 备份招聘季 B · 当前')).toBeVisible();
+  await expect(page.locator('.settings-grid .overview-list')).toContainText('M8 备份招聘季 A');
+  await expect(recoveryList).toContainText('M8 备份招聘季 A · v2');
+  await expect(recoveryCapacity).toContainText('恢复副本 2 份');
+  await expect(recoveryCapacity).toContainText('不等于 IndexedDB 或 SQLite 的实际磁盘占用');
+
+  const selectedCopy = recoveryList.getByRole('listitem').filter({ hasText: 'M8 备份招聘季 A、M8 备份招聘季 B' });
+  await expect(selectedCopy).toContainText('M8 备份招聘季 A、M8 备份招聘季 B');
+  await expect(selectedCopy).toContainText('JSON UTF-8 序列化估算：');
+  await selectedCopy.getByRole('button', { name: '删除此副本…' }).click();
+  const deleteConfirm = page.getByRole('dialog', { name: '永久删除这份恢复副本？' });
+  await expect(deleteConfirm).toContainText('restore-v2-3');
+  await expect(deleteConfirm).toContainText('当前数据和其他恢复副本不受影响');
+  await deleteConfirm.getByRole('button', { name: '保留此副本' }).click();
+  await expect(selectedCopy).toBeVisible();
+
+  const capacityBeforeDelete = await recoveryCapacity.textContent();
+  await selectedCopy.getByRole('button', { name: '删除此副本…' }).click();
+  await deleteConfirm.getByRole('button', { name: '永久删除此副本' }).click();
+  await expect(page.getByText(/已删除恢复副本「M8 备份招聘季 A、M8 备份招聘季 B」/)).toBeVisible();
+  await expect(selectedCopy).toHaveCount(0);
+  await expect(recoveryCapacity).toContainText('恢复副本 1 份');
+  expect(await recoveryCapacity.textContent()).not.toBe(capacityBeforeDelete);
+  await expect(recoveryList).toContainText('M8 备份招聘季 A · v2');
+  await expect(page.getByText('M8 备份招聘季 B · 当前')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('M8 备份招聘季 B · 当前')).toBeVisible();
+  await expect(page.locator('.recovery-list').getByRole('listitem')).toHaveCount(1);
+  await expect(page.locator('.recovery-list')).not.toContainText('M8 备份招聘季 A、M8 备份招聘季 B');
+});
+
+test('M3 raw JSON import previews original statuses and replaces only the selected season after confirmation', async ({ page }) => {
+  await page.goto('/settings');
+  await page.getByLabel('名称').fill('M3 原始导入招聘季');
+  await page.getByRole('button', { name: '创建并设为当前' }).click();
+  await expect(page.getByText('招聘季已创建并设为当前招聘季。')).toBeVisible();
+
+  await page.goto('/applications');
+  await page.getByRole('button', { name: /新建草稿/ }).first().click();
+  const draftDialog = page.getByRole('dialog', { name: '新建投递草稿' });
+  await draftDialog.getByLabel('公司').fill('应被替换的旧记录');
+  await draftDialog.getByLabel('岗位').fill('测试岗位');
+  await draftDialog.getByRole('button', { name: '创建空进度草稿' }).click();
+  await expect(page.getByText('已创建一条尚未记录进度的草稿。')).toBeVisible();
+
+  const rows = [
+    { id: 'raw-screening', company: '导入筛选公司', position: '后端工程师', location: '上海', channel: '官网', link: 'https://jobs.example.com/a', applyDate: '2026-09-01', status: '筛选中', createdAt: '2026-09-01T09:00:00+08:00', updatedAt: '2026-09-04T10:00:00+08:00', statusUpdatedAt: '2026-09-04T10:00:00+08:00' },
+    { id: 'raw-failed', company: '导入挂掉公司', position: '产品经理', location: '杭州', channel: '官网', link: 'https://jobs.example.com/b', applyDate: '2026-09-02', status: '挂掉', createdAt: '2026-09-02T09:00:00+08:00', updatedAt: '2026-09-05T10:00:00+08:00', statusUpdatedAt: '2026-09-05T10:00:00+08:00' },
+    { id: 'raw-draft', company: '导入待投递公司', position: '设计师', location: '北京', channel: '官网', link: '', applyDate: '2026-09-03', status: '待投递', createdAt: '2026-09-03T09:00:00+08:00', updatedAt: '2026-09-03T09:00:00+08:00', statusUpdatedAt: '2026-09-03T09:00:00+08:00' },
+  ];
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '从原始 JSON 导入' }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({ name: '秋招投递记录.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(rows)) });
+  const preview = page.getByRole('region', { name: '原始 JSON 导入预览' });
+  await expect(preview).toContainText('文件共有 3 条；有效 3 条；问题 0 条。当前招聘季有 1 条');
+  await expect(preview.getByText('筛选中', { exact: true })).toBeVisible();
+  await expect(preview.getByText('挂掉', { exact: true })).toBeVisible();
+  await expect(preview.getByText('待投递', { exact: true })).toBeVisible();
+
+  await preview.getByRole('button', { name: '确认替换并导入 3 条' }).click();
+  const confirm = page.getByRole('dialog', { name: '替换这个招聘季的全部记录？' });
+  await confirm.getByRole('button', { name: '替换并导入' }).click();
+  await expect(page.getByText('已导入 3 条记录到「M3 原始导入招聘季」；替换前的 1 条记录已保留为恢复副本。')).toBeVisible();
+  await expect(page.getByText('应被替换的旧记录')).toHaveCount(0);
+  const screeningRow = page.getByRole('row', { name: /导入筛选公司.*后端工程师/ });
+  const failedRow = page.getByRole('row', { name: /导入挂掉公司.*产品经理/ });
+  const draftRow = page.getByRole('row', { name: /导入待投递公司.*设计师/ });
+  await expect(screeningRow).toBeVisible();
+  await expect(screeningRow).toContainText('筛选中');
+  await expect(failedRow).toBeVisible();
+  await expect(failedRow).toContainText('挂掉（环节未知）');
+  await expect(draftRow).toBeVisible();
+  await expect(draftRow).toContainText('待投递');
+  await expect(draftRow).toContainText('空进度');
+
+  await page.reload();
+  await expect(page.getByRole('row', { name: /导入筛选公司.*后端工程师/ })).toContainText('筛选中');
+  await expect(page.getByRole('row', { name: /导入挂掉公司.*产品经理/ })).toContainText('挂掉（环节未知）');
+});

@@ -1,0 +1,118 @@
+.progress-status-editor {
+  display: grid;
+  gap: 14px;
+  color: #333830;
+  font-size: 14px;
+}
+
+.progress-status-editor__mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #e5e3da;
+}
+
+.progress-status-editor__mode legend {
+  padding: 0 5px;
+  color: #74776b;
+  font-size: 12px;
+}
+
+.progress-status-editor__mode label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.progress-status-editor__field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.progress-status-editor__field > span {
+  color: #4e524a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.progress-status-editor__field input,
+.progress-status-editor__field select,
+.progress-status-editor__field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #d8d6cc;
+  border-radius: 3px;
+  background: #fffefc;
+  color: #333830;
+  font: inherit;
+}
+
+.progress-status-editor__field textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.progress-status-editor__field input:focus-visible,
+.progress-status-editor__field select:focus-visible,
+.progress-status-editor__field textarea:focus-visible,
+.progress-status-editor__actions button:focus-visible {
+  outline: 2px solid #ac6549;
+  outline-offset: 2px;
+}
+
+.progress-status-editor__field small,
+.progress-status-editor__hint {
+  margin: 0;
+  color: #74776b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.progress-status-editor__error {
+  margin: 0;
+  color: #8e392e;
+  font-size: 13px;
+}
+
+.progress-status-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.progress-status-editor__actions button {
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 1px solid #d8d6cc;
+  border-radius: 3px;
+  background: #fffefc;
+  color: #333830;
+  font: inherit;
+  cursor: pointer;
+}
+
+.progress-status-editor__actions button[type='submit'] {
+  border-color: #ac6549;
+  background: #ac6549;
+  color: #fff;
+}
+
+.progress-status-editor__actions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+@media (max-width: 520px) {
+  .progress-status-editor__mode {
+    display: grid;
+    gap: 10px;
+  }
+}
