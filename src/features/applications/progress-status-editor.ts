@@ -16,7 +16,11 @@ export interface ProgressStatusEditorDraft {
   eventId: string;
   notes: string;
   reopenReason: string;
+  /** How an appended status relates to the current stage visit; `auto` continues forward progress. */
+  visitChoice?: ProgressVisitChoice;
 }
+
+export type ProgressVisitChoice = 'auto' | 'new' | 'continue';
 
 export type ProgressStatusEditorCommand =
   | {
@@ -90,6 +94,28 @@ function currentEvent(record: ProgressRecord): ProgressEvent | null {
   return effectiveEvents(record).at(-1) ?? null;
 }
 
+const phaseOrder: Readonly<Record<string, number>> = { waiting: 0, in_progress: 1, awaiting_result: 2, passed: 3 };
+
+/**
+ * An appended status may join the current visit only inside the same still-active stage.
+ * Moving forward within that stage (待一面 → 一面中 → 一面通过) is suggested by default;
+ * repeating or going back (重面、再次筛选) starts a new visit.
+ */
+export function visitContinuation(definitions: R1DefinitionsSnapshot, record: ProgressRecord, statusId: string): { possible: boolean; suggested: boolean } {
+  const status = definitions.statuses.find(item => item.id === statusId);
+  const last = currentEvent(record);
+  if (!status || !last || status.stageId === null) return { possible: false, suggested: false };
+  const possible = last.semantics.stageId === status.stageId && last.semantics.terminalOutcome === 'active';
+  const from = phaseOrder[last.phase];
+  const to = phaseOrder[status.defaultPhase];
+  return { possible, suggested: possible && status.semantic === 'stage' && from !== undefined && to !== undefined && to > from };
+}
+
+export function continuesVisit(definitions: R1DefinitionsSnapshot, record: ProgressRecord, draft: Pick<ProgressStatusEditorDraft, 'statusId' | 'visitChoice'>): boolean {
+  const choice = draft.visitChoice ?? 'auto';
+  return choice === 'continue' || (choice === 'auto' && visitContinuation(definitions, record, draft.statusId).suggested);
+}
+
 export function buildProgressStatusEditorCommand(args: {
   definitions: R1DefinitionsSnapshot;
   record: ProgressRecord;
@@ -151,7 +177,9 @@ export function buildProgressStatusEditorCommand(args: {
       return { kind: 'append', input: { applicationId: record.applicationId, expectedRevision, command } };
     }
     requireRule(!draft.reopenReason.trim(), '只有从终止状态重新开始时才填写原因');
-    const command: AppendProgressInput = common;
+    const continueVisit = continuesVisit(definitions, record, draft);
+    if (continueVisit) requireRule(visitContinuation(definitions, record, status.id).possible, '只有同一环节内仍在进行的流程可以记为同一轮的进展');
+    const command: AppendProgressInput = continueVisit ? { ...common, mode: 'continue_visit' } : common;
     return { kind: 'append', input: { applicationId: record.applicationId, expectedRevision, command } };
   }
 

@@ -137,3 +137,22 @@ test('validates the optional phase, command identifier, date, and revision befor
 test('defaults dates in the plan’s Asia/Shanghai business timezone', () => {
   assert.equal(editor.localBusinessDate(new Date('2026-09-16T16:30:00.000Z')), '2026-09-17');
 });
+
+test('forward progress inside one active stage continues the visit unless the user starts a new round', () => {
+  const current = append(append(record('visit'), 'submitted', '2026-09-01'), 'written_test_active', '2026-09-02');
+  const forward = build(current, draft({ statusId: 'written_test_passed', occurredOn: '2026-09-03' }));
+  assert.equal(forward.input.command.mode, 'continue_visit');
+  const applied = domain.appendProgressEvent(current, definitions, forward.input.command, { now: '2026-09-17T12:00:00.000Z', id: () => 'visit-event' }).record;
+  const visits = domain.projectProgress(applied, definitions, '2026-09-17').visits.filter(visit => visit.stageId === 'written_test');
+  assert.equal(visits.length, 1, '笔试中 → 笔试通过 是同一轮');
+
+  assert.equal(build(current, draft({ statusId: 'written_test_passed', visitChoice: 'new' })).input.command.mode, undefined);
+  assert.equal(build(current, draft({ statusId: 'written_test_waiting' })).input.command.mode, undefined, '退回待笔试默认是新的一轮');
+  assert.equal(build(current, draft({ statusId: 'interview_1_waiting' })).input.command.mode, undefined, '换环节不续接');
+  assert.throws(() => build(current, draft({ statusId: 'interview_1_waiting', visitChoice: 'continue' })), /同一环节内仍在进行/);
+
+  const screening = append(append(record('screen'), 'submitted', '2026-09-01'), 'screening', '2026-09-02');
+  assert.equal(build(screening, draft({ statusId: 'screening' })).input.command.mode, undefined, '再次筛选是新的一轮');
+  const failed = append(current, 'written_test_failed', '2026-09-04', { failedAt: { stageId: 'written_test' } });
+  assert.deepEqual(editor.visitContinuation(definitions, failed, 'written_test_passed'), { possible: false, suggested: false });
+});

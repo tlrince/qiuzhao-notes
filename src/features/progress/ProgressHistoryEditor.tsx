@@ -1,11 +1,12 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ProgressEvent, ProgressRecord, R1DefinitionsSnapshot, StatusDefinition } from '../../domain/v2/types.js';
 import {
   allowedProgressStatuses,
   buildProgressStatusEditorCommand,
+  continuesVisit,
   localBusinessDate,
   pendingOfferCountForDraft,
-  phaseLabel,
+  visitContinuation,
   type ProgressStatusEditorCommand,
   type ProgressStatusEditorDraft,
 } from '../applications/progress-status-editor.js';
@@ -70,6 +71,7 @@ export function ProgressHistoryEditor({
   const [draft, setDraft] = useState(() => initialDraft(action, record, today));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const visitFieldName = useId();
   const pendingCommand = useRef<{ fingerprint: string; commandId: string } | null>(null);
   const events = useMemo(() => effectiveEvents(record), [record]);
   const target = action.kind === 'append' ? null : events.find(event => event.id === (action.kind === 'backfill' ? action.beforeEventId : action.eventId)) ?? null;
@@ -85,6 +87,8 @@ export function ProgressHistoryEditor({
   const failureStages = selectedStatus?.semantic === 'failed'
     ? stages.filter(stage => selectedStatus.stageId === null || selectedStatus.stageId === stage.id)
     : [];
+  const canContinueVisit = action.kind === 'append' && !reopening && !!selectedStatus && visitContinuation(definitions, record, selectedStatus.id).possible;
+  const continuing = canContinueVisit && continuesVisit(definitions, record, draft);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -149,7 +153,7 @@ export function ProgressHistoryEditor({
 
     <label className="progress-status-editor__field">
       <span>状态</span>
-      <select required value={draft.statusId} onChange={event => setDraft(previous => ({ ...previous, statusId: event.target.value, phase: '', failedAt: '' }))}>
+      <select required value={draft.statusId} onChange={event => setDraft(previous => ({ ...previous, statusId: event.target.value, phase: '', failedAt: '', visitChoice: 'auto' }))}>
         <option value="">选择状态</option>
         {statuses.map(status => <option key={status.id} value={status.id}>{statusLabel(status, definitions)}</option>)}
       </select>
@@ -159,14 +163,11 @@ export function ProgressHistoryEditor({
       {offerCount > 0 ? `在这个历史位置有 ${offerCount} 个尚未决定的有效 Offer，可选择接受或拒绝。` : '这个历史位置没有尚未决定的有效 Offer；接受或拒绝状态不可用。'}
     </p>
 
-    {selectedStatus ? <label className="progress-status-editor__field">
-      <span>阶段结果（可选）</span>
-      <select value={draft.phase} onChange={event => setDraft(previous => ({ ...previous, phase: event.target.value }))}>
-        <option value="">使用状态定义：{phaseLabel(selectedStatus.defaultPhase)}</option>
-        <option value={selectedStatus.defaultPhase}>明确记录：{phaseLabel(selectedStatus.defaultPhase)}</option>
-      </select>
-      <small>结果由状态定义约束；例如「笔试通过」和「笔试待结果」是不同状态。</small>
-    </label> : null}
+    {canContinueVisit ? <fieldset className="progress-status-editor__mode">
+      <legend>这次记录属于</legend>
+      <label><input type="radio" name={visitFieldName} checked={continuing} onChange={() => setDraft(previous => ({ ...previous, visitChoice: 'continue' }))} />同一轮的进展（如 一面中 → 一面通过）</label>
+      <label><input type="radio" name={visitFieldName} checked={!continuing} onChange={() => setDraft(previous => ({ ...previous, visitChoice: 'new' }))} />新的一轮（重面、再次进入该环节）</label>
+    </fieldset> : null}
 
     {selectedStatus?.semantic === 'failed' ? <label className="progress-status-editor__field">
       <span>失败环节</span>
