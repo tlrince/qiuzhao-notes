@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ApplicationV2 } from '../../domain/v2/snapshot.js';
 import type { Schedule } from '../../domain/types.js';
+import type { ProgressEvent } from '../../domain/v2/types.js';
 import { createProgressRecord } from '../../domain/v2/progress.js';
 import type { CreateApplicationCommandInput, EditableApplicationFields } from '../../repositories/v2/application-commands.js';
 import { usePlatform } from '../../app/PlatformContext.js';
@@ -11,7 +12,7 @@ import { localBusinessDate, type ProgressStatusEditorCommand } from './progress-
 import { ProgressHistory } from '../progress/ProgressHistory.js';
 import { CityTagsInput } from '../../shared/ui/CityTagsInput.js';
 import { splitCities } from '../../domain/v2/cities.js';
-import { quickStatusOptions } from '../progress/quick-status.js';
+import { groupQuickStatusOptions, quickStatusOptions } from '../progress/quick-status.js';
 import { normalizeUrlInput, safeExternalHttpUrl, sameRoleApplications } from './applications-page-model.js';
 import './ApplicationsV2Page.css';
 
@@ -70,6 +71,10 @@ export function useApplicationActions(notice: Notice) {
     async saveFields(application: ApplicationV2, patch: EditableApplicationFields) {
       await runCommand((commands, expectedRevision) => commands.updateFields({ applicationId: application.id, expectedRevision, patch }));
       notice('基本信息已保存');
+    },
+    async removeProgressEvent(applicationId: string, event: ProgressEvent) {
+      await runCommand((commands, expectedRevision) => commands.invalidateProgress({ applicationId, expectedRevision, eventId: event.id }));
+      notice(`已删除「${event.statusNameSnapshot}」这条进展`);
     },
     async applyProgressCommand(command: ProgressStatusEditorCommand) {
       await runCommand(commands => command.kind === 'append' ? commands.appendProgress(command.input) : commands.correctProgress(command.input));
@@ -299,6 +304,7 @@ export function ApplicationDetailDrawer({ applicationId, onClose, notice }: { ap
           auditEvents={progress.events}
           uncertainEdges={progress.migrationReview?.uncertainEdges ?? []}
           title="有效进度历史"
+          onDelete={event => void actions.removeProgressEvent(progress.applicationId, event).catch(cause => notice(cause instanceof Error ? cause.message : '删除失败', 'error'))}
         />
         {progress.events.some(event => event.invalidatedAt !== null) && <details className="applications-v2__audit">
           <summary>查看已纠正的审计记录（{progress.events.filter(event => event.invalidatedAt !== null).length}）</summary>
@@ -353,11 +359,15 @@ export function CreateApplicationDrawer({ open, seasonId, onClose, notice, onCre
   const actions = useApplicationActions(notice);
   const season = seasonId ? snapshot.seasons.find(item => item.id === seasonId && item.archivedAt === null) ?? null : null;
   const activeChannels = snapshot.channels.filter(channel => channel.archivedAt === null);
+  // The full grouped list, so an application found late can start at e.g. 一面待结果; outcomes that
+  // need an earlier event (接受 / 拒绝 Offer, 主动退出) are left to the board.
   const statusOptions = useMemo(() => quickStatusOptions(snapshot.definitions, createProgressRecord('new-application'))
-    .filter(option => option.key !== 'withdrawn' && option.key !== 'offer_accepted' && option.key !== 'offer_declined'), [snapshot.definitions]);
+    .filter(option => !['withdrawn', 'offer_accepted', 'offer_declined'].includes(snapshot.definitions.statuses.find(status => status.id === option.statusId)?.semantic ?? '')), [snapshot.definitions]);
+  const semanticOf = (statusId: string) => snapshot.definitions.statuses.find(status => status.id === statusId)?.semantic;
+  const submittedKey = statusOptions.find(option => semanticOf(option.statusId) === 'submitted')?.key ?? '';
   const blank = (): CreateFields => {
     const today = localBusinessDate();
-    return { company: '', role: '', city: '', channelId: activeChannels[0]?.id ?? '', statusKey: 'submitted', appliedOn: today, statusOn: today, jobUrl: '', trackingUrl: '', notes: '', isStarred: false };
+    return { company: '', role: '', city: '', channelId: activeChannels[0]?.id ?? '', statusKey: submittedKey, appliedOn: today, statusOn: today, jobUrl: '', trackingUrl: '', notes: '', isStarred: false };
   };
   const [fields, setFields] = useState<CreateFields>(blank);
   const [saving, setSaving] = useState(false);
@@ -367,8 +377,8 @@ export function CreateApplicationDrawer({ open, seasonId, onClose, notice, onCre
 
   const update = <K extends keyof CreateFields>(key: K, value: CreateFields[K]) => setFields(current => ({ ...current, [key]: value }));
   const option = statusOptions.find(item => item.key === fields.statusKey);
-  const recordsSubmission = fields.statusKey !== 'draft';
-  const laterStatus = recordsSubmission && fields.statusKey !== 'submitted';
+  const recordsSubmission = semanticOf(fields.statusKey) !== 'draft';
+  const laterStatus = recordsSubmission && fields.statusKey !== submittedKey;
   const earlier = season ? sameRoleApplications(snapshot.applications, season.id, fields.company, fields.role) : [];
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -377,7 +387,7 @@ export function CreateApplicationDrawer({ open, seasonId, onClose, notice, onCre
     setError('');
     if (recordsSubmission && !fields.appliedOn) { setError('请填写投递日期；还没投递可以把状态选为「待投递」。'); return; }
     if (laterStatus && fields.statusOn < fields.appliedOn) { setError('状态日期不能早于投递日期。'); return; }
-    const failed = option?.key === 'failed';
+    const failedStatus = option ? snapshot.definitions.statuses.find(status => status.id === option.statusId && status.semantic === 'failed') : undefined;
     setSaving(true);
     try {
       const created = await actions.createApplication({
@@ -394,7 +404,7 @@ export function CreateApplicationDrawer({ open, seasonId, onClose, notice, onCre
           initialProgress: {
             submittedOn: fields.appliedOn,
             ...(laterStatus && option ? { statusId: option.statusId, occurredOn: fields.statusOn } : {}),
-            ...(failed ? { failedAt: 'unknown' as const } : {}),
+            ...(failedStatus ? { failedAt: failedStatus.stageId ? { stageId: failedStatus.stageId } : 'unknown' as const } : {}),
           },
         } : {}),
       });
@@ -416,7 +426,9 @@ export function CreateApplicationDrawer({ open, seasonId, onClose, notice, onCre
             <label><span>岗位 *</span><input required maxLength={160} value={fields.role} onChange={event => update('role', event.target.value)} placeholder="如：后端开发工程师" /></label>
             {earlier.length > 0 && <p className="applications-v2__form-note">这家公司的同名岗位已有 {earlier.length} 条记录；不同时期的投递可以继续保存为新的一条。</p>}
             <label><span>当前状态</span><select value={fields.statusKey} onChange={event => update('statusKey', event.target.value)}>
-              {statusOptions.map(item => <option key={item.key} value={item.key}>{item.key === 'draft' ? '待投递（先存草稿）' : item.label}</option>)}
+              {groupQuickStatusOptions(statusOptions).map(group => <optgroup key={group.label} label={group.label}>
+                {group.options.map(item => <option key={item.key} value={item.key}>{semanticOf(item.statusId) === 'draft' ? `${item.label}（先存草稿）` : item.label}</option>)}
+              </optgroup>)}
             </select></label>
             {recordsSubmission && <label><span>投递日期</span><input type="date" required value={fields.appliedOn} onChange={event => update('appliedOn', event.target.value)} /></label>}
             {laterStatus && <label><span>「{option?.label}」的日期</span><input type="date" required value={fields.statusOn} onChange={event => update('statusOn', event.target.value)} /><small>会依次记录「已投递」和「{option?.label}」两条进度。</small></label>}

@@ -7,15 +7,15 @@ const buildDirectory = process.env.M3_PAGE_MODEL_BUILD_DIR;
 if (!buildDirectory) throw new Error('Set M3_PAGE_MODEL_BUILD_DIR to the isolated TypeScript output directory before running this test.');
 const model = await import(pathToFileURL(join(buildDirectory, 'features/applications/applications-page-model.js')).href);
 
-const application = (id, seasonId, company, role, city, updatedAt) => ({
-  id, seasonId, company, role, city, updatedAt,
+const application = (id, seasonId, company, role, city, appliedOn, createdAt = `${appliedOn ?? '2026-09-01'}T00:00:00.000Z`) => ({
+  id, seasonId, company, role, city, appliedOn, createdAt,
 });
 
 test('search is scoped to the selected season and matches company, role, and city without case sensitivity', () => {
   const rows = [
-    application('a', 'fall-1', 'Northwind', 'Backend Engineer', '上海', '2026-09-16T10:00:00.000Z'),
-    application('b', 'fall-1', 'Contoso', 'Data Engineer', '杭州', '2026-09-17T10:00:00.000Z'),
-    application('c', 'fall-2', 'Northwind', 'Product Manager', '北京', '2026-09-17T11:00:00.000Z'),
+    application('a', 'fall-1', 'Northwind', 'Backend Engineer', '上海', '2026-09-16'),
+    application('b', 'fall-1', 'Contoso', 'Data Engineer', '杭州', '2026-09-17'),
+    application('c', 'fall-2', 'Northwind', 'Product Manager', '北京', '2026-09-17'),
   ];
 
   assert.deepEqual(model.filterApplicationsForSeason(rows, 'fall-1', 'NORTH'), [rows[0]]);
@@ -24,12 +24,14 @@ test('search is scoped to the selected season and matches company, role, and cit
   assert.equal(model.filterApplicationsForSeason(rows, 'fall-1', 'PM').length, 0);
 });
 
-test('blank query returns the selected season in most recently updated order', () => {
+test('rows are always newest application date first, with undated drafts on top', () => {
   const rows = [
-    application('a', 'fall-1', 'Old', 'Role', '', '2026-09-16T10:00:00.000Z'),
-    application('b', 'fall-1', 'New', 'Role', '', '2026-09-17T10:00:00.000Z'),
+    application('a', 'fall-1', 'Old', 'Role', '', '2026-09-16'),
+    application('b', 'fall-1', 'New', 'Role', '', '2026-09-17'),
+    application('draft', 'fall-1', 'Draft', 'Role', '', null, '2026-09-10T00:00:00.000Z'),
+    application('c', 'fall-1', 'Older but edited later', 'Role', '', '2026-08-01', '2026-10-01T00:00:00.000Z'),
   ];
-  assert.deepEqual(model.filterApplicationsForSeason(rows, 'fall-1', '   ').map(row => row.id), ['b', 'a']);
+  assert.deepEqual(model.filterApplicationsForSeason(rows, 'fall-1', '   ').map(row => row.id), ['draft', 'b', 'a', 'c']);
 });
 
 test('external destinations accept only valid HTTP and HTTPS URLs', () => {

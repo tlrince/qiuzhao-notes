@@ -233,6 +233,7 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
         onEdit={item => setDetailId(item.row.application.id)}
         onDelete={item => setDeleting(item)}
         onHistoryAction={(item, action) => setEditor({ applicationId: item.row.application.id, action })}
+        onDeleteEvent={(item, event) => void actions.removeProgressEvent(item.row.application.id, event).catch(cause => notice(cause instanceof Error ? cause.message : '删除失败', 'error'))}
       />
     </>}
 

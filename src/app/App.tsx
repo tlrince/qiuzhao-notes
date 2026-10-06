@@ -172,7 +172,7 @@ function Settings() {
     </div>
     <div className="settings-backup-section">
       <ChartCard title="完整数据备份" subtitle="备份包含所有招聘季、投递、进度历史、状态配置与设置，不受页面筛选影响。">
-        <div className="page-actions">
+        <div className="page-actions settings-backup-actions">
           <Button type="button" disabled={busy || backupBusy} onClick={() => void exportBackup()}>{backupBusy ? '处理中…' : '导出完整备份'}</Button>
           <Button type="button" variant="secondary" disabled={busy || backupBusy} onClick={() => void chooseBackup()}>选择备份并预览</Button>
         </div>

@@ -3,15 +3,18 @@ import type { ProgressEvent, ProgressRecord, R1DefinitionsSnapshot, StatusDefini
 import { activeProgressStatuses, pendingOfferCountForDraft, visitContinuation } from '../applications/progress-status-editor.js';
 
 /**
- * One coarse choice in the sheet's status dropdown, like the original offer.html list
- * (已投递、筛选中、笔试、一面…挂掉). Each choice records one representative status;
- * finer phases stay available in the full status editor.
+ * One status in the sheet's status dropdown. Every live status is offered, grouped
+ * under its stage (待一面 / 一面中 / 一面待结果 / 一面通过 / 一面挂 under 一面), so the
+ * sheet records exactly what happened without opening the full editor.
  */
 export interface QuickStatusOption {
+  /** The status id; also the <option> value. */
   key: string;
   label: string;
   statusId: string;
   disabled: boolean;
+  /** The <optgroup> this option belongs to. */
+  group: string;
 }
 
 export interface QuickStatusTone {
@@ -46,49 +49,54 @@ export function currentQuickStatusKey(record: ProgressRecord): string {
   return current ? keyFor(current.semantics.semantic, current.semantics.stageId, current.statusId) : 'draft';
 }
 
-function representative(statuses: StatusDefinition[], stageId: string): StatusDefinition | undefined {
-  const linked = statuses.filter(status => status.stageId === stageId && status.semantic !== 'failed'
-    && status.semantic !== 'offer_accepted' && status.semantic !== 'offer_declined');
-  return linked.find(status => status.semantic === 'screening' || status.semantic === 'pool')
-    ?? linked.find(status => status.semantic === 'stage' && status.defaultPhase === 'in_progress')
-    ?? linked.find(status => status.semantic === 'stage')
-    ?? linked[0];
-}
+const OUTCOME_SEMANTICS = new Set(['offer_received', 'offer_accepted', 'offer_declined', 'withdrawn']);
 
-/** Options in process order; the current choice is labelled with the exact current status. */
+/** Every live status in process order and grouped by stage; the current status is selected and labelled exactly. */
 export function quickStatusOptions(definitions: R1DefinitionsSnapshot, record: ProgressRecord): QuickStatusOption[] {
   const statuses = activeProgressStatuses(definitions);
   const events = effectiveEvents(record);
   const current = events.at(-1) ?? null;
-  const currentKey = currentQuickStatusKey(record);
   const submitted = events.some(event => event.semantics.semantic === 'submitted');
   const pendingOffers = pendingOfferCountForDraft(record, { mode: 'append', eventId: '' });
-  const bySemantic = (semantic: StatusDefinition['semantic']) => statuses.find(status => status.semantic === semantic);
   const options: QuickStatusOption[] = [];
-  const add = (key: string, label: string, status: StatusDefinition | undefined, disabled = false) => {
-    if (status) options.push({ key, label, statusId: status.id, disabled });
-  };
+  const add = (status: StatusDefinition, group: string, disabled = false) => options.push({ key: status.id, label: status.name, statusId: status.id, disabled, group });
 
-  if (currentKey === 'draft') add('draft', bySemantic('draft')?.name ?? '待投递', bySemantic('draft'));
-  add('submitted', bySemantic('submitted')?.name ?? '已投递', bySemantic('submitted'), submitted && currentKey !== 'submitted');
+  for (const status of statuses) {
+    if (status.semantic === 'draft' && current === null) add(status, '投递');
+    if (status.semantic === 'submitted') add(status, '投递', submitted && current?.statusId !== status.id);
+  }
   const stages = definitions.stages
     .filter(stage => stage.archivedAt === null && stage.category !== 'offer')
     .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
   for (const stage of stages) {
-    const status = representative(statuses, stage.id);
-    if (!status) continue;
-    add(`stage:${stage.id}`, status.semantic === 'screening' || status.semantic === 'pool' ? status.name : stage.name, status);
+    for (const status of statuses) if (status.stageId === stage.id && !OUTCOME_SEMANTICS.has(status.semantic)) add(status, stage.name);
   }
-  add('offer', 'Offer', bySemantic('offer_received'));
-  if (pendingOffers > 0 || currentKey === 'offer_accepted') add('offer_accepted', bySemantic('offer_accepted')?.name ?? '已接受 Offer', bySemantic('offer_accepted'));
-  if (pendingOffers > 0 || currentKey === 'offer_declined') add('offer_declined', bySemantic('offer_declined')?.name ?? '已拒绝 Offer', bySemantic('offer_declined'));
-  add('failed', '挂掉', statuses.find(status => status.semantic === 'failed' && status.stageId === null) ?? bySemantic('failed'));
-  add('withdrawn', bySemantic('withdrawn')?.name ?? '主动退出', bySemantic('withdrawn'));
+  for (const status of statuses) {
+    if (status.semantic === 'offer_received') add(status, 'Offer');
+    if ((status.semantic === 'offer_accepted' || status.semantic === 'offer_declined') && (pendingOffers > 0 || current?.statusId === status.id)) add(status, 'Offer');
+  }
+  const listed = new Set(options.map(option => option.statusId));
+  for (const status of statuses) {
+    const general = status.stageId === null || !stages.some(stage => stage.id === status.stageId);
+    if (!listed.has(status.id) && general && status.semantic !== 'draft' && status.semantic !== 'submitted' && !OUTCOME_SEMANTICS.has(status.semantic)) add(status, '其他');
+  }
+  for (const status of statuses) if (status.semantic === 'withdrawn') add(status, '其他');
 
-  const selected = options.find(option => option.key === currentKey);
-  if (selected && current) selected.label = current.statusNameSnapshot;
-  else if (current) options.unshift({ key: currentKey, label: current.statusNameSnapshot, statusId: current.statusId, disabled: true });
+  if (current && !options.some(option => option.statusId === current.statusId)) {
+    options.unshift({ key: current.statusId, label: current.statusNameSnapshot, statusId: current.statusId, disabled: true, group: '当前' });
+  }
   return options;
+}
+
+/** Consecutive options sharing a group, for rendering <optgroup>s. */
+export function groupQuickStatusOptions(options: readonly QuickStatusOption[]): { label: string; options: QuickStatusOption[] }[] {
+  const groups: { label: string; options: QuickStatusOption[] }[] = [];
+  for (const option of options) {
+    const last = groups.at(-1);
+    if (last && last.label === option.group) last.options.push(option);
+    else groups.push({ label: option.group, options: [option] });
+  }
+  return groups;
 }
 
 /** Turns a dropdown choice into append steps; it never fabricates a submission on its own. */
@@ -104,19 +112,13 @@ export function buildQuickStatusChange(args: {
   const { definitions, record, option, today, commandId } = args;
   const events = effectiveEvents(record);
   const current = events.at(-1) ?? null;
-  if (option.key === currentQuickStatusKey(record) || option.disabled) return { kind: 'noop' };
+  if (option.statusId === current?.statusId || option.disabled) return { kind: 'noop' };
   if (current && reopenable.has(current.semantics.terminalOutcome)) return { kind: 'needs-reopen' };
 
   const statuses = activeProgressStatuses(definitions);
-  let status = statuses.find(item => item.id === option.statusId);
+  const status = statuses.find(item => item.id === option.statusId);
   if (!status) return { kind: 'noop' };
-  let failedAt: AppendProgressInput['failedAt'];
-  if (option.key === 'failed') {
-    // Attribute the failure to the stage the application is in, when that stage has its own failed status.
-    const stageId = current?.semantics.stageId ?? null;
-    status = (stageId ? statuses.find(item => item.semantic === 'failed' && item.stageId === stageId) : undefined) ?? status;
-    failedAt = status.stageId ? { stageId: status.stageId } : 'unknown';
-  }
+  const failedAt: AppendProgressInput['failedAt'] = status.semantic === 'failed' ? status.stageId ? { stageId: status.stageId } : 'unknown' : undefined;
 
   const occurredOn = current && current.occurredOn > today ? current.occurredOn : today;
   const steps: AppendProgressInput[] = [];

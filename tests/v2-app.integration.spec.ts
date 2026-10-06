@@ -84,7 +84,7 @@ test('empty v1 browser database migrates on cold start and v2 data is shared acr
   const submissionConfirm = page.getByRole('dialog', { name: '这条还没有投递记录' });
   await submissionConfirm.getByRole('button', { name: '记录投递并更新状态' }).click();
   await expect(page.locator('.toast').filter({ hasText: '状态已更新为「筛选中」' })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: new RegExp(`修改${TEST_COMPANY}的状态，当前筛选中`) })).toHaveValue('stage:screening');
+  await expect(page.getByRole('combobox', { name: new RegExp(`修改${TEST_COMPANY}的状态，当前筛选中`) })).toHaveValue('screening');
   await expect(page.getByText('已保存到此浏览器', { exact: true })).toBeVisible();
   await expect(submittedStat).toContainText('1', { useInnerText: true });
 
@@ -99,7 +99,7 @@ test('empty v1 browser database migrates on cold start and v2 data is shared acr
   await page.reload();
   await expect(page.getByText(TEST_COMPANY)).toBeVisible();
   await page.goto('/board');
-  await expect(page.getByRole('combobox', { name: new RegExp(`修改${TEST_COMPANY}的状态`) })).toHaveValue('stage:screening');
+  await expect(page.getByRole('combobox', { name: new RegExp(`修改${TEST_COMPANY}的状态`) })).toHaveValue('screening');
 });
 
 test('M8 settings exports a complete v2 backup, previews it, and atomically restores it after confirmation', async ({ page }) => {

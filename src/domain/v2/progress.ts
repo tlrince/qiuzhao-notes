@@ -371,7 +371,19 @@ export function invalidateProgressEvent(recordInput: ProgressRecord, definitions
   const event = record.events.find(candidate => candidate.id === eventId && candidate.invalidatedAt === null);
   if (!event) throw new DomainError('NOT_FOUND', '有效事件不存在');
   event.invalidatedAt = at;
-  normalizeActive(record); syncAppliedOn(record);
+  const active = normalizeActive(record); syncAppliedOn(record);
+  // A record that continued the removed one's visit joins the visit now before it when that is the
+  // same, still-open stage (so a mistaken duplicate entry stops counting as a second visit);
+  // otherwise it opens the visit itself.
+  active.forEach((candidate, index) => {
+    if (candidate.visitAction !== 'continue') return;
+    const previous = active[index - 1];
+    const sameOpenStage = !!previous && candidate.semantics.stageId !== null
+      && previous.semantics.stageId === candidate.semantics.stageId && previous.semantics.terminalOutcome === 'active';
+    if (sameOpenStage) { candidate.visitId = previous.visitId; return; }
+    candidate.visitAction = 'new';
+    if (candidate.source === 'continued') candidate.source = 'entered';
+  });
   validateProgressRecord(record, definitions);
   return record;
 }

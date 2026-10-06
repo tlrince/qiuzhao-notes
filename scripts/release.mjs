@@ -35,6 +35,9 @@ if (!env.TAURI_SIGNING_PRIVATE_KEY) {
   env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(keyPath, 'utf8');
 }
 env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= '';
+// Skip the Finder window-layout step of bundle_dmg.sh: it needs Finder automation and can fail
+// half way, leaving a temporary image mounted. The dmg works the same without it.
+env.CI ??= 'true';
 
 // One universal build serves both Apple-chip and Intel Macs when the Intel target is installed.
 const installed = spawnSync('rustup', ['target', 'list', '--installed'], { env, encoding: 'utf8' }).stdout ?? '';

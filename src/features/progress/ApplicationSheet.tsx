@@ -1,10 +1,10 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import type { ProgressTableColumn, ProgressTableStageCell } from '../../domain/v2/table.js';
-import type { R1DefinitionsSnapshot } from '../../domain/v2/types.js';
+import type { ProgressEvent, R1DefinitionsSnapshot } from '../../domain/v2/types.js';
 import { Icon } from '../../shared/ui/Icon.js';
 import { ProgressHistory } from './ProgressHistory.js';
 import type { ProgressHistoryAction } from './ProgressHistoryEditor.js';
-import { quickStatusOptions, quickStatusTone, type QuickStatusOption } from './quick-status.js';
+import { groupQuickStatusOptions, quickStatusOptions, quickStatusTone, type QuickStatusOption } from './quick-status.js';
 import { displayNotes, STALE_DAYS, type SheetItem } from './sheet-model.js';
 import { isValidProgressDate } from './table-keyboard.js';
 import './ApplicationSheet.css';
@@ -27,6 +27,7 @@ export interface ApplicationSheetProps {
   onEdit: (item: SheetItem) => void;
   onDelete: (item: SheetItem) => void;
   onHistoryAction: (item: SheetItem, action: ProgressHistoryAction) => void;
+  onDeleteEvent: (item: SheetItem, event: ProgressEvent) => void;
 }
 
 const monthDay = (date: string) => { const [, month, day] = date.split('-'); return `${Number(month)}月${Number(day)}日`; };
@@ -127,7 +128,7 @@ function SheetRow({ item, props }: { item: SheetItem; props: ApplicationSheetPro
           <div className="sheet__co">
             <span>{application.company}</span>
             {application.isStarred && <span className="sheet__star" aria-label="已关注" title="已关注">★</span>}
-            {stale && <span className="sheet__stale" title={`状态已 ${item.staleDays} 天没有更新，可以主动 follow 一下`} aria-label={`状态已 ${item.staleDays} 天没有更新`}><Icon name="alert" size={14} /></span>}
+            
           </div>
         </div>
       </td>
@@ -146,18 +147,21 @@ function SheetRow({ item, props }: { item: SheetItem; props: ApplicationSheetPro
         <select
           className="sheet__status"
           style={{ '--c': tone.color, '--cbg': tone.background } as CSSProperties}
-          value={item.statusKey}
+          value={item.row.events.at(-1)?.statusId ?? options[0]?.key ?? ''}
           disabled={busy}
           aria-label={`修改${application.company}的状态，当前${current.statusName}`}
           title={current.occurredOn ? `${current.statusName} · ${current.occurredOn}` : current.statusName}
           onChange={event => { const option = options.find(entry => entry.key === event.target.value); if (option) props.onStatusChange(item, option); }}
         >
-          {options.map(option => <option key={option.key} value={option.key} disabled={option.disabled}>{option.label}</option>)}
+          {groupQuickStatusOptions(options).map(group => <optgroup key={group.label} label={group.label}>
+            {group.options.map(option => <option key={option.key} value={option.key} disabled={option.disabled}>{option.label}</option>)}
+          </optgroup>)}
         </select>
       </td>
       <td className="sheet__next">{nextSchedule
         ? <span className={overdue ? 'sheet__overdue' : undefined} title={nextSchedule.notes || nextSchedule.title}>{overdue ? '已逾期 · ' : ''}{localStamp(nextSchedule.startsAt).slice(5)} · {nextSchedule.title}</span>
-        : <span className="sheet__muted">—</span>}</td>
+        : stale ? <span className="sheet__stale" title={`「${current.statusName}」已经 ${item.staleDays} 天没有新进展，可以去进度页看看或主动跟进`}>{item.staleDays} 天没进展，可以跟进</span>
+          : <span className="sheet__muted">—</span>}</td>
       <td className="sheet__cities">{item.cities.length ? item.cities.map(city => <span key={city} className="sheet__city">{city}</span>) : <span className="sheet__muted">—</span>}</td>
       <td className="sheet__link">{href
         ? <div className="sheet__link-inner"><button type="button" className="sheet__url" title={href} onClick={() => props.onOpenUrl(href)}>{shortUrl(href)}</button><button type="button" className="sheet__mini" onClick={() => props.onCopy(href, '投递链接')}><Icon name="copy" size={12} />复制</button></div>
@@ -189,6 +193,7 @@ function SheetRow({ item, props }: { item: SheetItem; props: ApplicationSheetPro
             onAppend={() => props.onHistoryAction(item, { kind: 'append' })}
             onBackfill={beforeEventId => props.onHistoryAction(item, { kind: 'backfill', beforeEventId })}
             onCorrect={event => props.onHistoryAction(item, { kind: 'correct', eventId: event.id })}
+            onDelete={event => props.onDeleteEvent(item, event)}
           />
           <div className="sheet__detail-links">
             {application.jobUrl && <span>岗位 JD：<button type="button" className="sheet__url" onClick={() => { const url = safeHttpUrl(application.jobUrl); if (url) props.onOpenUrl(url); }}>{shortUrl(application.jobUrl)}</button></span>}

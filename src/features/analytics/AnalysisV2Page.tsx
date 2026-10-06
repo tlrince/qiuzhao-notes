@@ -125,13 +125,12 @@ function StageReach({ result }: { result: V2AnalyticsResult }) {
   const maxCount = Math.max(1, result.submittedCount, ...reached.map(stage => stage.touchCount));
   return <ChartCard title="累计阶段触达" subtitle="只展示至少有一条实际触达记录的环节。" aside={<span className="analysis-v2__tag">按岗位去重</span>} className="analysis-v2__stage-card">
     {reached.length ? <div className="analysis-v2__stage-list">
-      {reached.map(stage => <div className="analysis-v2__stage-row" key={stage.stageId}>
+      {reached.map(stage => <div className="analysis-v2__stage-row" key={stage.stageId} title={`${stage.name}：${stage.touchCount} 个岗位${stage.visitCount !== stage.touchCount ? `，共 ${stage.visitCount} 次经历` : ''}`}>
         <div className="analysis-v2__stage-label" title={stage.name}>{stage.name}</div>
         <div className="analysis-v2__stage-track" role="meter" aria-label={`${stage.name}触达岗位`} aria-valuemin={0} aria-valuemax={maxCount} aria-valuenow={stage.touchCount}>
           <span style={{ width: `${Math.max(2, (stage.touchCount / maxCount) * 100)}%` }} />
         </div>
         <div className="analysis-v2__stage-value"><strong>{stage.touchCount}</strong><span>{formatAnalysisRate(stage.rate)}</span></div>
-        {stage.visitCount !== stage.touchCount ? <small>共 {stage.visitCount} 次经历（含重复进入）</small> : null}
       </div>)}
       <p className="analysis-v2__chart-footnote">比例 = 触达岗位 ÷ 已投递岗位；若记录了尚无投递日期的后续经历，比例可能超过 100%。</p>
     </div> : <EmptyState compact icon="board" title="还没有实际阶段触达" description="记录一次真实状态后，对应环节会显示在这里；未经历的模板环节不会预先出现。" />}
