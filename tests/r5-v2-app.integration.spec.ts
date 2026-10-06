@@ -116,4 +116,13 @@ test('the sheet records forward progress in one stage as a single visit', async 
   await expect(drawer).toHaveCount(0);
   await expect(flow.locator('.sheet__stage').filter({ hasText: '笔试' })).not.toContainText('共 2 次');
   await expect(flow.locator('.progress-history__badge--visit')).toHaveCount(0);
+
+  // Deleting from the sheet can be undone from the toast without a full recovery copy.
+  await page.getByRole('button', { name: '删除同一轮公司 · 后端工程师' }).click();
+  await page.getByRole('dialog', { name: '删除这条记录？' }).getByRole('button', { name: '删除' }).click();
+  await expect(status).toHaveCount(0);
+  const toast = page.locator('.toast').filter({ hasText: '已删除「同一轮公司 · 后端工程师」' });
+  await toast.getByRole('button', { name: '撤销' }).click();
+  await expect(page.locator('.toast').filter({ hasText: '已恢复「同一轮公司 · 后端工程师」' })).toBeVisible();
+  await expect(status).toHaveValue('stage:written_test');
 });

@@ -188,13 +188,13 @@ function Settings() {
       </ChartCard>
     </div>
     <div className="settings-backup-section">
-      <ChartCard title="本机恢复副本" subtitle="每次整体恢复或批量替换前都会保留快照；普通保存不会覆盖或清理。这里只能逐条手动删除，不会自动清理。">
+      <ChartCard title="本机恢复副本" subtitle="整体恢复、导入或同步前会自动保留一份快照，只保留最近 5 份，更早的会自动清理。删除单条投递或日程不占用副本，删除后可以在提示里立即撤销。">
         {recoveryError && <p className="platform-error" role="alert">{recoveryError}</p>}
         {!recoveryError && <div className="recovery-capacity" data-testid="recovery-capacity"><strong>恢复副本 {recoverySnapshots.length} 份 · JSON UTF-8 序列化估算合计 {recoverySnapshotBytes.toLocaleString('zh-CN')} 字节</strong><span>每份按保存数据序列化为 JSON 后的 UTF-8 大小估算，不等于 IndexedDB 或 SQLite 的实际磁盘占用。</span></div>}
         {recoverySnapshots.length ? <ul className="overview-list recovery-list">{recoverySnapshots.map(item => <li key={item.id}>
           <div><strong>{item.seasonNames.length ? `${item.seasonNames.slice(0, 3).join('、')}${item.seasonNames.length > 3 ? ` 等 ${item.seasonNames.length} 个招聘季` : ''}` : item.workspaceName} · v{item.sourceSchemaVersion}</strong><span>修订 {item.sourceRevision} · {item.seasonCount} 个招聘季 · {item.applicationCount} 条投递</span><span>JSON UTF-8 序列化估算：{item.estimatedJsonBytes.toLocaleString('zh-CN')} 字节</span></div>
           <div className="page-actions"><Button type="button" variant="secondary" disabled={busy || backupBusy} onClick={() => { setRecoveryToRestore(item); setConfirmRecoveryRestore(true); }}>预览并恢复</Button><Button type="button" variant="ghost" disabled={busy || backupBusy} onClick={() => { setRecoveryToDelete(item); setConfirmRecoveryDelete(true); }}>删除此副本…</Button></div>
-        </li>)}</ul> : !recoveryError ? <EmptyState compact icon="shield" title="还没有恢复副本" description="完成一次整体恢复或会保留旧数据的导入后，副本会列在这里。" /> : null}
+        </li>)}</ul> : !recoveryError ? <EmptyState compact icon="shield" title="还没有恢复副本" description="完成一次整体恢复、导入或同步后，之前的数据会作为副本列在这里。" /> : null}
         {recoveryToRestore && <div className="restore-preview" role="status"><h3>恢复副本预览</h3><p>{recoveryToRestore.seasonNames.join('、') || recoveryToRestore.workspaceName} · 来源 v{recoveryToRestore.sourceSchemaVersion} · 修订 {recoveryToRestore.sourceRevision}</p><p>{recoveryToRestore.seasonCount} 个招聘季 · {recoveryToRestore.applicationCount} 条投递</p><p>恢复后，当前快照会在同一事务中另存为新的恢复副本。</p><Button type="button" disabled={busy || backupBusy} onClick={() => setConfirmRecoveryRestore(true)}>确认恢复此副本</Button></div>}
       </ChartCard>
     </div>
@@ -238,7 +238,7 @@ function DesignSystem({ onPreviewChange, preview }: { onPreviewChange: (value: b
 }
 function AnalyticsRoute({ seasonId, onSeasonChange }: { seasonId: string | null; onSeasonChange: (seasonId: string) => void }) {
   const { exportBackup, busy } = useBackupExport();
-  const { toasts, show } = useToasts(3200);
+  const { toasts, show, dismiss } = useToasts(3200);
   const notice = useCallback((message: string, tone: 'success' | 'error' = 'success') => show(message, tone), [show]);
   const [creating, setCreating] = useState(false);
   const runExport = () => {
@@ -248,7 +248,7 @@ function AnalyticsRoute({ seasonId, onSeasonChange }: { seasonId: string | null;
   return <>
     <AnalysisV2Page seasonId={seasonId} onSeasonChange={value => { if (value) onSeasonChange(value); }} onAddApplication={() => setCreating(true)} onExport={runExport} />
     <CreateApplicationDrawer open={creating} seasonId={seasonId} onClose={() => setCreating(false)} notice={notice} />
-    <ToastRegion toasts={toasts} />
+    <ToastRegion toasts={toasts} onDismiss={dismiss} />
   </>;
 }
 function DefaultRoute() { const { search } = useLocation(); return <Navigate to={`/analytics${search}`} replace />; }

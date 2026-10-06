@@ -5,7 +5,7 @@ import { usePlatform } from '../../app/PlatformContext.js';
 import { useV2Data } from '../../app/V2DataContext.js';
 import { ConfirmDialog } from '../../shared/ui/Dialog.js';
 import { filterApplicationsForSeason } from './applications-page-model.js';
-import { ApplicationDetailDrawer, CreateApplicationDrawer, ExternalLink, useApplicationActions, type NoticeTone } from './ApplicationDrawers.js';
+import { ApplicationDetailDrawer, CreateApplicationDrawer, ExternalLink, useApplicationActions, type NoticeAction, type NoticeTone } from './ApplicationDrawers.js';
 import { parseRawApplicationsImport, planRawImportSync, requireCleanRawImport, type RawImportResult, type RawImportSyncPlan } from '../../domain/v2/raw-import.js';
 import './ApplicationsV2Page.css';
 
@@ -22,11 +22,11 @@ export function ApplicationsV2Page({ seasonId }: { seasonId: string | null }) {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [feedback, setFeedback] = useState<{ message: string; tone: NoticeTone } | null>(null);
+  const [feedback, setFeedback] = useState<{ message: string; tone: NoticeTone; action?: NoticeAction } | null>(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [confirmImport, setConfirmImport] = useState<'sync' | 'replace' | null>(null);
-  const notice = useCallback((message: string, tone: NoticeTone = 'success') => setFeedback({ message, tone }), []);
+  const notice = useCallback((message: string, tone: NoticeTone = 'success', action?: NoticeAction) => setFeedback({ message, tone, ...(action ? { action } : {}) }), []);
   const actions = useApplicationActions(notice);
   const season = seasonId ? snapshot.seasons.find(item => item.id === seasonId && item.archivedAt === null) ?? null : null;
   const applications = useMemo(
@@ -116,7 +116,7 @@ export function ApplicationsV2Page({ seasonId }: { seasonId: string | null }) {
       </div>
     </header>
 
-    {feedback && <p className={`applications-v2__feedback${feedback.tone === 'error' ? ' applications-v2__feedback--error' : ''}`} role="status">{feedback.message}<button type="button" aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></p>}
+    {feedback && <p className={`applications-v2__feedback${feedback.tone === 'error' ? ' applications-v2__feedback--error' : ''}`} role="status"><span>{feedback.message}{feedback.action && <button type="button" className="applications-v2__feedback-action" onClick={() => { const action = feedback.action!; setFeedback(null); void action.run(); }}>{feedback.action.label}</button>}</span><button type="button" aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></p>}
 
     {importPreview && sync && replace && <section className="applications-v2__import-preview" aria-label="原始 JSON 导入预览">
       <div className="applications-v2__import-preview-heading"><div><h2>原始 JSON 导入预览</h2><p>目标招聘季：{importTargetSeason?.name ?? '已不存在'}。确认前不会修改任何记录。</p></div>

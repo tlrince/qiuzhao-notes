@@ -9,7 +9,8 @@ import {
   type AppendProgressInput,
   type CorrectProgressInput,
 } from '../../domain/v2/progress.js';
-import { syncApplicationWithProgress, validateV2Snapshot, type ApplicationV2, type DataSnapshotV2 } from '../../domain/v2/snapshot.js';
+import { syncApplicationWithProgress, validateV2Snapshot, type ApplicationV2, type DataSnapshotV2, type LegacyHistoryRecord } from '../../domain/v2/snapshot.js';
+import type { Schedule } from '../../domain/types.js';
 import type { ProgressEvent, ProgressRecord } from '../../domain/v2/types.js';
 import type { SnapshotStoreV2 } from '../storage-v2-contract.js';
 
@@ -63,6 +64,14 @@ export interface ProgressCommandValue {
   duplicate: boolean;
 }
 
+/** Everything a deletion removed, so the same application can be put back unchanged. */
+export interface DeletedApplication {
+  application: ApplicationV2;
+  progress: ProgressRecord;
+  schedules: Schedule[];
+  legacyHistory: LegacyHistoryRecord[];
+}
+
 export interface ApplicationCommands {
   createApplication(input: CreateApplicationCommandInput): Promise<ApplicationCommandResult<ApplicationV2>>;
   updateFields(input: RevisionedCommandInput & { patch: EditableApplicationFields }): Promise<ApplicationCommandResult<ApplicationV2>>;
@@ -71,7 +80,9 @@ export interface ApplicationCommands {
   appendProgressSteps(input: RevisionedCommandInput & { steps: AppendProgressInput[] }): Promise<ApplicationCommandResult<{ application: ApplicationV2; progress: ProgressRecord; changed: boolean }>>;
   correctProgress(input: RevisionedCommandInput & { eventId: string; command: CorrectProgressInput }): Promise<ApplicationCommandResult<ProgressCommandValue & { correctedEventId: string }>>;
   invalidateProgress(input: RevisionedCommandInput & { eventId: string }): Promise<ApplicationCommandResult<{ application: ApplicationV2; progress: ProgressRecord }>>;
-  deleteApplication(input: RevisionedCommandInput): Promise<ApplicationCommandResult<{ applicationId: string; removedProgressRecordCount: number; removedScheduleCount: number; removedLegacyHistoryCount: number }>>;
+  deleteApplication(input: RevisionedCommandInput): Promise<ApplicationCommandResult<{ applicationId: string; removedProgressRecordCount: number; removedScheduleCount: number; removedLegacyHistoryCount: number; removed: DeletedApplication }>>;
+  /** Undoes a deletion by putting the removed application, history and schedules back. */
+  restoreDeletedApplication(input: { expectedRevision: number; removed: DeletedApplication }): Promise<ApplicationCommandResult<ApplicationV2>>;
 }
 
 const editableKeys = new Set<keyof EditableApplicationFields>([
@@ -116,7 +127,6 @@ export function createApplicationCommands(
     expectedRevision: number,
     mutate: (snapshot: DataSnapshotV2, now: string) => T,
     shouldCommit: (value: T) => boolean = () => true,
-    retainRecoveryCopy = false,
   ): Promise<ApplicationCommandResult<T>> {
     const stored = await store.read();
     assertExpectedRevision(expectedRevision, stored.revision);
@@ -132,9 +142,7 @@ export function createApplicationCommands(
       assertExpectedRevision(expectedRevision, latest.revision);
       return { revision: latest.revision, value: structuredClone(value) };
     }
-    const revision = retainRecoveryCopy
-      ? await store.restore(expectedRevision, next)
-      : await store.commit(expectedRevision, next);
+    const revision = await store.commit(expectedRevision, next);
     return { revision, value: structuredClone(value) };
   }
 
@@ -299,8 +307,15 @@ export function createApplicationCommands(
     },
 
     deleteApplication(input) {
+      // A single deletion is undone with restoreDeletedApplication instead of a
+      // whole-workspace recovery copy, which would also roll back later edits.
       return transact(input.expectedRevision, snapshot => {
-        findApplication(snapshot, input.applicationId);
+        const removed: DeletedApplication = {
+          application: structuredClone(findApplication(snapshot, input.applicationId)),
+          progress: structuredClone(findProgress(snapshot, input.applicationId)),
+          schedules: structuredClone(snapshot.schedules.filter(schedule => schedule.applicationId === input.applicationId)),
+          legacyHistory: structuredClone(snapshot.legacyHistory.filter(record => record.applicationId === input.applicationId)),
+        };
         const applicationIds = new Set([input.applicationId]);
         const progressBefore = snapshot.progressRecords.length;
         const schedulesBefore = snapshot.schedules.length;
@@ -315,8 +330,25 @@ export function createApplicationCommands(
           removedLegacyHistoryCount: legacyBefore - snapshot.legacyHistory.length,
           // Keep this local invariant visible in case the snapshot model changes.
           removedProgressRecordCount: progressBefore - snapshot.progressRecords.length,
+          removed,
         };
-      }, () => true, true);
+      });
+    },
+
+    restoreDeletedApplication(input) {
+      return transact(input.expectedRevision, snapshot => {
+        const { application, progress, schedules, legacyHistory } = input.removed;
+        requireRule(progress.applicationId === application.id
+          && schedules.every(schedule => schedule.applicationId === application.id)
+          && legacyHistory.every(record => record.applicationId === application.id), '要恢复的投递数据不完整');
+        if (snapshot.applications.some(item => item.id === application.id)) throw new DomainError('CONFLICT', '这条投递已经存在，无需撤销');
+        requireRule(!schedules.some(schedule => snapshot.schedules.some(item => item.id === schedule.id)), '要恢复的日程已存在');
+        snapshot.applications.push(structuredClone(application));
+        snapshot.progressRecords.push(structuredClone(progress));
+        snapshot.schedules.push(...structuredClone(schedules));
+        snapshot.legacyHistory.push(...structuredClone(legacyHistory));
+        return application;
+      });
     },
   };
 }

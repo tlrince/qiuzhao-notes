@@ -10,7 +10,9 @@ export interface ScheduleCommands {
   createSchedule(input: { expectedRevision: number; applicationId: string } & ScheduleFields): Promise<{ revision: number; value: Schedule }>;
   updateSchedule(input: { expectedRevision: number; scheduleId: string; patch: Partial<ScheduleFields> }): Promise<{ revision: number; value: Schedule }>;
   setScheduleStatus(input: { expectedRevision: number; scheduleId: string; status: Schedule['status'] }): Promise<{ revision: number; value: Schedule }>;
-  deleteSchedule(input: { expectedRevision: number; scheduleId: string }): Promise<{ revision: number; value: { scheduleId: string; applicationId: string } }>;
+  deleteSchedule(input: { expectedRevision: number; scheduleId: string }): Promise<{ revision: number; value: { scheduleId: string; applicationId: string; removed: Schedule } }>;
+  /** Undoes a deletion by putting the same schedule back. */
+  restoreSchedule(input: { expectedRevision: number; schedule: Schedule }): Promise<{ revision: number; value: Schedule }>;
 }
 
 const scheduleTypes = new Set<Schedule['type']>(['assessment', 'interview', 'follow_up', 'other']);
@@ -41,19 +43,13 @@ export function createScheduleCommands(
 ): ScheduleCommands {
   const id = context.id ?? (() => globalThis.crypto.randomUUID());
 
-  async function transact<T>(
-    expectedRevision: number,
-    mutate: (snapshot: DataSnapshotV2) => T,
-    preserveRecoveryCopy = false,
-  ): Promise<{ revision: number; value: T }> {
+  async function transact<T>(expectedRevision: number, mutate: (snapshot: DataSnapshotV2) => T): Promise<{ revision: number; value: T }> {
     const stored = await store.read();
     checkRevision(expectedRevision, stored.revision);
     const next = structuredClone(stored.data);
     const value = mutate(next);
     validateV2Snapshot(next);
-    const revision = preserveRecoveryCopy
-      ? await store.restore(expectedRevision, next)
-      : await store.commit(expectedRevision, next);
+    const revision = await store.commit(expectedRevision, next);
     return { revision, value: structuredClone(value) };
   }
 
@@ -110,10 +106,21 @@ export function createScheduleCommands(
     deleteSchedule(input) {
       return transact(input.expectedRevision, snapshot => {
         const schedule = findSchedule(snapshot, input.scheduleId);
-        const removed = { scheduleId: schedule.id, applicationId: schedule.applicationId };
+        const removed = { scheduleId: schedule.id, applicationId: schedule.applicationId, removed: structuredClone(schedule) };
         snapshot.schedules = snapshot.schedules.filter(item => item.id !== schedule.id);
         return removed;
-      }, true);
+      });
+    },
+    restoreSchedule(input) {
+      return transact(input.expectedRevision, snapshot => {
+        const schedule = structuredClone(input.schedule);
+        requireRule(snapshot.applications.some(application => application.id === schedule.applicationId), '日程所属的投递已不存在');
+        if (snapshot.schedules.some(item => item.id === schedule.id)) throw new DomainError('CONFLICT', '这条日程已经存在，无需撤销');
+        validateFields(schedule);
+        requireRule(scheduleStatuses.has(schedule.status), '日程状态无效');
+        snapshot.schedules.push(schedule);
+        return schedule;
+      });
     },
   };
 }

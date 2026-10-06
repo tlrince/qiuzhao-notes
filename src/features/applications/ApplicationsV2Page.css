@@ -191,3 +191,6 @@
 .applications-v2__import-replace { color: var(--applications-muted); font-size: 0.8rem; }
 .applications-v2__import-replace summary { cursor: pointer; }
 .applications-v2__import-replace > p { margin: 0.6rem 0; }
+.applications-v2__feedback-action { margin-left: 0.8rem; padding: 0; border: 0; background: none; color: #536747; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.applications-v2__undo { display: flex; align-items: center; gap: 0.8rem; margin: 0; padding: 0.5rem 0.7rem; border: 1px solid #d3d9c7; background: #f5f7ef; color: #48523a; font-size: 0.8rem; }
+.applications-v2__undo button { padding: 0; border: 0; background: none; color: #536747; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }

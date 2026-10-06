@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { DataSnapshotV2 } from '../domain/v2/snapshot.js';
 import type { ApplicationCommands } from '../repositories/v2/application-commands.js';
 import { createApplicationCommands } from '../repositories/v2/application-commands.js';
@@ -57,6 +57,10 @@ export function V2DataProvider({
   channelName?: string;
 }) {
   const [stored, setStored] = useState(initial);
+  // Commands read the newest loaded revision at call time, so actions run later
+  // (such as an undo button in a notice) do not carry a stale revision.
+  const revisionRef = useRef(initial.revision);
+  useLayoutEffect(() => { revisionRef.current = stored.revision; }, [stored.revision]);
   // The initial snapshot was just read from durable storage, so it is already saved.
   const [saveStatus, setSaveStatus] = useState<V2SaveStatus>('saved');
   const [lastError, setLastError] = useState<string | null>(null);
@@ -73,6 +77,7 @@ export function V2DataProvider({
     const latest = await store.read();
     if (generation === refreshGeneration.current) {
       setStored(current => latest.revision >= current.revision ? latest : current);
+      if (latest.revision > revisionRef.current) revisionRef.current = latest.revision;
     }
     return latest;
   }, [store]);
@@ -81,7 +86,7 @@ export function V2DataProvider({
     setSaveStatus('saving');
     setLastError(null);
     try {
-      const value = await action(commands, stored.revision);
+      const value = await action(commands, revisionRef.current);
       await refresh();
       setSaveStatus('saved');
       return value;
@@ -93,13 +98,13 @@ export function V2DataProvider({
       setSaveStatus('error');
       throw cause;
     }
-  }, [commands, refresh, stored.revision]);
+  }, [commands, refresh]);
 
   const runWorkspaceCommand = useCallback(async <T,>(action: (commandSet: WorkspaceCommands, revision: number) => Promise<T>) => {
     setSaveStatus('saving');
     setLastError(null);
     try {
-      const value = await action(workspaceCommands, stored.revision);
+      const value = await action(workspaceCommands, revisionRef.current);
       await refresh();
       setSaveStatus('saved');
       return value;
@@ -110,13 +115,13 @@ export function V2DataProvider({
       setSaveStatus('error');
       throw cause;
     }
-  }, [refresh, stored.revision, workspaceCommands]);
+  }, [refresh, workspaceCommands]);
 
   const runDefinitionCommand = useCallback(async <T,>(action: (commandSet: DefinitionCommands, revision: number) => Promise<T>) => {
     setSaveStatus('saving');
     setLastError(null);
     try {
-      const value = await action(definitionCommands, stored.revision);
+      const value = await action(definitionCommands, revisionRef.current);
       await refresh();
       setSaveStatus('saved');
       return value;
@@ -127,13 +132,13 @@ export function V2DataProvider({
       setSaveStatus('error');
       throw cause;
     }
-  }, [definitionCommands, refresh, stored.revision]);
+  }, [definitionCommands, refresh]);
 
   const runBackupCommand = useCallback(async <T,>(action: (commandSet: BackupCommands, revision: number) => Promise<T>) => {
     setSaveStatus('saving');
     setLastError(null);
     try {
-      const value = await action(backupCommands, stored.revision);
+      const value = await action(backupCommands, revisionRef.current);
       await refresh();
       setSaveStatus('saved');
       return value;
@@ -144,13 +149,13 @@ export function V2DataProvider({
       setSaveStatus('error');
       throw cause;
     }
-  }, [backupCommands, refresh, stored.revision]);
+  }, [backupCommands, refresh]);
 
   const runImportCommand = useCallback(async <T,>(action: (commandSet: ImportCommands, revision: number) => Promise<T>) => {
     setSaveStatus('saving');
     setLastError(null);
     try {
-      const value = await action(importCommands, stored.revision);
+      const value = await action(importCommands, revisionRef.current);
       await refresh();
       setSaveStatus('saved');
       return value;
@@ -161,13 +166,13 @@ export function V2DataProvider({
       setSaveStatus('error');
       throw cause;
     }
-  }, [importCommands, refresh, stored.revision]);
+  }, [importCommands, refresh]);
 
   const runScheduleCommand = useCallback(async <T,>(action: (commandSet: ScheduleCommands, revision: number) => Promise<T>) => {
     setSaveStatus('saving');
     setLastError(null);
     try {
-      const value = await action(scheduleCommands, stored.revision);
+      const value = await action(scheduleCommands, revisionRef.current);
       await refresh();
       setSaveStatus('saved');
       return value;
@@ -178,7 +183,7 @@ export function V2DataProvider({
       setSaveStatus('error');
       throw cause;
     }
-  }, [refresh, scheduleCommands, stored.revision]);
+  }, [refresh, scheduleCommands]);
 
   const recordBackupAt = useCallback(async (at: string) => {
     // File output succeeds independently of this bookkeeping write. Re-read and

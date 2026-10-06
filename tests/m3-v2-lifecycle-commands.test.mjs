@@ -25,7 +25,7 @@ function trackedStore(seed) {
   };
 }
 
-test('删除投递通过 CAS 原子级联清理进度、日程与旧历史，并保留其他投递和删除前快照', async () => {
+test('删除投递通过 CAS 原子级联清理进度、日程与旧历史，并能原样撤销', async () => {
   const seed = migrateV1Snapshot(acceptanceSnapshot(), { migratedAt: date });
   seed.legacyHistory = seed.legacyHistory.filter(item => !['A', 'B'].includes(item.applicationId));
   seed.schedules.push(
@@ -43,18 +43,31 @@ test('删除投递通过 CAS 原子级联清理进度、日程与旧历史，并
   const after = await store.read();
 
   assert.equal(removed.revision, before.revision + 1);
-  assert.deepEqual(removed.value, { applicationId: 'A', removedScheduleCount: 1, removedLegacyHistoryCount: 1, removedProgressRecordCount: 1 });
+  const { removed: deletedData, ...counts } = removed.value;
+  assert.deepEqual(counts, { applicationId: 'A', removedScheduleCount: 1, removedLegacyHistoryCount: 1, removedProgressRecordCount: 1 });
+  assert.deepEqual(deletedData.application, before.data.applications.find(item => item.id === 'A'));
+  assert.deepEqual(deletedData.progress, before.data.progressRecords.find(item => item.applicationId === 'A'));
+  assert.deepEqual(deletedData.schedules.map(item => item.id), ['schedule-A']);
+  assert.deepEqual(deletedData.legacyHistory.map(item => item.applicationId), ['A']);
   assert.ok(!after.data.applications.some(item => item.id === 'A'));
   assert.ok(!after.data.progressRecords.some(item => item.applicationId === 'A'));
   assert.deepEqual(after.data.schedules.map(item => item.id), ['schedule-B']);
   assert.deepEqual(after.data.legacyHistory.map(item => item.applicationId), ['C', 'D', 'E', 'F', 'B']);
   assert.ok(after.data.applications.some(item => item.id === 'B'));
   assert.ok(after.data.progressRecords.some(item => item.applicationId === 'B'));
-  assert.equal(store.restores, 1);
+  assert.equal(store.restores, 0, '单条删除不再整库保存恢复副本');
   validateV2Snapshot(after.data);
   await assert.rejects(commands.deleteApplication({ applicationId: 'A', expectedRevision: after.revision }), error => error.code === 'NOT_FOUND');
   await assert.rejects(commands.deleteApplication({ applicationId: 'B', expectedRevision: before.revision }), error => error.code === 'CONFLICT');
   assert.deepEqual(await store.read(), after);
+
+  await assert.rejects(commands.restoreDeletedApplication({ expectedRevision: before.revision, removed: deletedData }), error => error.code === 'CONFLICT');
+  const undone = await commands.restoreDeletedApplication({ expectedRevision: after.revision, removed: deletedData });
+  assert.equal(undone.revision, after.revision + 1);
+  const restored = (await store.read()).data;
+  const sortById = items => [...items].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  for (const key of ['applications', 'progressRecords', 'schedules', 'legacyHistory']) assert.deepEqual(sortById(restored[key]), sortById(before.data[key]), `${key} 撤销后与删除前一致`);
+  await assert.rejects(commands.restoreDeletedApplication({ expectedRevision: undone.revision, removed: deletedData }), error => error.code === 'CONFLICT');
 });
 
 test('新建、编辑、完成、取消、恢复和删除日程都各自 CAS 提交，不自动推进投递状态', async () => {
@@ -80,9 +93,15 @@ test('新建、编辑、完成、取消、恢复和删除日程都各自 CAS 提
   assert.equal(pending.value.status, 'pending');
   const beforeDelete = await store.read();
   const deleted = await commands.deleteSchedule({ expectedRevision: beforeDelete.revision, scheduleId: created.value.id });
-  assert.deepEqual(deleted.value, { scheduleId: created.value.id, applicationId: 'A' });
+  assert.equal(deleted.value.scheduleId, created.value.id);
+  assert.equal(deleted.value.applicationId, 'A');
+  assert.deepEqual(deleted.value.removed, beforeDelete.data.schedules.find(item => item.id === created.value.id));
   assert.ok(!(await store.read()).data.schedules.some(item => item.id === created.value.id));
-  assert.equal(store.restores, 1);
+  assert.equal(store.restores, 0, '删除日程不再整库保存恢复副本');
+  const undone = await commands.restoreSchedule({ expectedRevision: deleted.revision, schedule: deleted.value.removed });
+  assert.deepEqual((await store.read()).data.schedules, beforeDelete.data.schedules, '撤销后日程原样回来');
+  await assert.rejects(commands.restoreSchedule({ expectedRevision: undone.revision, schedule: deleted.value.removed }), error => error.code === 'CONFLICT');
+  await commands.deleteSchedule({ expectedRevision: undone.revision, scheduleId: created.value.id });
   const final = await store.read();
   const application = final.data.applications.find(item => item.id === 'A');
   assert.equal(application.currentStatusId, 'draft');

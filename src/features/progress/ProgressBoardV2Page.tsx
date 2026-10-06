@@ -5,7 +5,7 @@ import { Button, PageHeader } from '../../shared/ui/components.js';
 import { Icon, type IconName } from '../../shared/ui/Icon.js';
 import { ToastRegion, useToasts } from '../../shared/ui/Toast.js';
 import { useV2Data } from '../../app/V2DataContext.js';
-import { ApplicationDetailDrawer, CreateApplicationDrawer, useApplicationActions, type NoticeTone } from '../applications/ApplicationDrawers.js';
+import { ApplicationDetailDrawer, CreateApplicationDrawer, useApplicationActions, type NoticeAction, type NoticeTone } from '../applications/ApplicationDrawers.js';
 import { localBusinessDate } from '../applications/progress-status-editor.js';
 import { ApplicationSheet } from './ApplicationSheet.js';
 import { ProgressHistoryEditor, type ProgressHistoryAction } from './ProgressHistoryEditor.js';
@@ -49,8 +49,8 @@ function BoardEmpty({ seasonId, onCreate }: { seasonId: string | null; onCreate:
 /** offer.html-style board over the shared v2 snapshot; every write goes through commands. */
 export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
   const { snapshot, revision, runCommand } = useV2Data();
-  const { toasts, show } = useToasts();
-  const notice = useCallback((message: string, tone: NoticeTone = 'success') => show(message, tone), [show]);
+  const { toasts, show, dismiss } = useToasts();
+  const notice = useCallback((message: string, tone: NoticeTone = 'success', action?: NoticeAction) => show(message, tone, action), [show]);
   const actions = useApplicationActions(notice);
   const [search, setSearch] = useState('');
   const [channelId, setChannelId] = useState(ALL);
@@ -242,12 +242,12 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
       onCancel={() => setDeleting(null)}
       onConfirm={() => { const target = deleting; setDeleting(null); if (target) void actions.deleteApplication(target.row.application).catch(cause => notice(cause instanceof Error ? cause.message : '删除失败', 'error')); }}
       title="删除这条记录？"
-      description={`「${deleting?.row.application.company ?? ''} · ${deleting?.row.application.role ?? ''}」及其进度和日程会被删除；删除前的数据会留作恢复副本。`}
+      description={`「${deleting?.row.application.company ?? ''} · ${deleting?.row.application.role ?? ''}」及其进度和日程会被删除；删除后可以在提示里立即撤销。`}
       confirmLabel="删除"
       cancelLabel="取消"
     />
     <CreateApplicationDrawer open={creating} seasonId={season?.id ?? null} onClose={() => setCreating(false)} notice={notice} />
     <ApplicationDetailDrawer applicationId={detailId} onClose={() => setDetailId(null)} notice={notice} />
-    <ToastRegion toasts={toasts} />
+    <ToastRegion toasts={toasts} onDismiss={dismiss} />
   </>;
 }

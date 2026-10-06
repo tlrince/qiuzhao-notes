@@ -14,7 +14,12 @@ import { normalizeUrlInput, safeExternalHttpUrl, sameRoleApplications } from './
 import './ApplicationsV2Page.css';
 
 export type NoticeTone = 'success' | 'error';
-export type Notice = (message: string, tone?: NoticeTone) => void;
+/** An optional follow-up offered with a notice, such as undoing a deletion. */
+export interface NoticeAction {
+  label: string;
+  run: () => void | Promise<void>;
+}
+export type Notice = (message: string, tone?: NoticeTone, action?: NoticeAction) => void;
 type ScheduleFields = Pick<Schedule, 'type' | 'title' | 'startsAt' | 'notes'>;
 
 const errorText = (cause: unknown, fallback: string) => cause instanceof Error ? cause.message : fallback;
@@ -62,8 +67,13 @@ export function useApplicationActions(notice: Notice) {
       notice('进度已保存');
     },
     async deleteApplication(application: ApplicationV2) {
-      await runCommand((commands, expectedRevision) => commands.deleteApplication({ applicationId: application.id, expectedRevision }));
-      notice('投递及其进度、日程已删除；删除前的数据已留作恢复副本');
+      const result = await runCommand((commands, expectedRevision) => commands.deleteApplication({ applicationId: application.id, expectedRevision }));
+      const name = `${application.company} · ${application.role}`;
+      notice(`已删除「${name}」`, 'success', {
+        label: '撤销',
+        run: () => runCommand((commands, expectedRevision) => commands.restoreDeletedApplication({ expectedRevision, removed: result.value.removed }))
+          .then(() => notice(`已恢复「${name}」`), cause => notice(errorText(cause, '撤销失败'), 'error')),
+      });
     },
     async createSchedule(applicationId: string, fields: ScheduleFields) {
       await runScheduleCommand((commands, expectedRevision) => commands.createSchedule({ applicationId, expectedRevision, ...fields }));
@@ -77,9 +87,14 @@ export function useApplicationActions(notice: Notice) {
       await runScheduleCommand((commands, expectedRevision) => commands.setScheduleStatus({ scheduleId, expectedRevision, status }));
       notice(`日程已标记为${scheduleStatusName(status)}`);
     },
-    async deleteSchedule(scheduleId: string) {
-      await runScheduleCommand((commands, expectedRevision) => commands.deleteSchedule({ scheduleId, expectedRevision }));
-      notice('日程已删除，删除前的数据已留作恢复副本');
+    /** Returns the removed schedule so the caller can offer an undo next to the list. */
+    async deleteSchedule(scheduleId: string): Promise<Schedule> {
+      const result = await runScheduleCommand((commands, expectedRevision) => commands.deleteSchedule({ scheduleId, expectedRevision }));
+      return result.value.removed;
+    },
+    async restoreSchedule(schedule: Schedule) {
+      await runScheduleCommand((commands, expectedRevision) => commands.restoreSchedule({ expectedRevision, schedule }));
+      notice('日程已恢复');
     },
   }), [notice, platform, runCommand, runScheduleCommand]);
 }
@@ -115,6 +130,8 @@ function ApplicationScheduleSection({ application, schedules, actions }: { appli
   const [deleting, setDeleting] = useState<Schedule | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // The section lives inside a modal drawer, so its undo has to be offered here.
+  const [lastDeleted, setLastDeleted] = useState<Schedule | null>(null);
   const rows = [...schedules].sort((left, right) => left.startsAt.localeCompare(right.startsAt));
   const invoke = async (id: string, action: () => Promise<void>) => {
     setError(''); setBusyId(id);
@@ -125,6 +142,7 @@ function ApplicationScheduleSection({ application, schedules, actions }: { appli
   return <section className="applications-v2__detail-section applications-v2__schedules" aria-label="日程管理">
     <div className="applications-v2__section-heading"><h3>日程</h3><button type="button" onClick={() => { setCreating(true); setEditingId(null); }}>＋ 添加日程</button></div>
     {error && <p className="applications-v2__error" role="alert">{error}</p>}
+    {lastDeleted && <p className="applications-v2__undo" role="status">已删除日程「{lastDeleted.title}」<button type="button" disabled={busyId === lastDeleted.id} onClick={() => void invoke(lastDeleted.id, async () => { await actions.restoreSchedule(lastDeleted); setLastDeleted(null); })}>撤销</button></p>}
     {rows.length === 0 && !creating && <p className="applications-v2__muted">还没有安排日程。</p>}
     {creating && <ScheduleForm schedule={null} onSave={fields => invoke('new', async () => { await actions.createSchedule(application.id, fields); setCreating(false); })} onCancel={() => setCreating(false)} />}
     <ul className="applications-v2__schedule-list">
@@ -141,7 +159,7 @@ function ApplicationScheduleSection({ application, schedules, actions }: { appli
           </>}
       </li>)}
     </ul>
-    <ConfirmDialog open={!!deleting} onCancel={() => setDeleting(null)} onConfirm={() => { if (deleting) void invoke(deleting.id, async () => { await actions.deleteSchedule(deleting.id); setDeleting(null); }); }} title="删除这条日程？" description={`“${deleting?.title ?? ''}”将从招聘季和总览中移除。`} confirmLabel="删除日程" cancelLabel="保留日程" />
+    <ConfirmDialog open={!!deleting} onCancel={() => setDeleting(null)} onConfirm={() => { if (deleting) void invoke(deleting.id, async () => { const removed = await actions.deleteSchedule(deleting.id); setDeleting(null); setLastDeleted(removed); }); }} title="删除这条日程？" description={`“${deleting?.title ?? ''}”将从招聘季和总览中移除。`} confirmLabel="删除日程" cancelLabel="保留日程" />
   </section>;
 }
 
@@ -298,7 +316,7 @@ export function ApplicationDetailDrawer({ applicationId, onClose, notice }: { ap
             .finally(() => setDeleting(false));
         }}
         title="删除这条投递？"
-        description={`将删除「${application.company} · ${application.role}」及其全部进度历史和日程。删除前的完整数据会留作恢复副本。`}
+        description={`将删除「${application.company} · ${application.role}」及其全部进度历史和日程。删除后可以在提示里立即撤销。`}
         confirmLabel={deleting ? '删除中…' : '删除投递'}
         cancelLabel="保留投递"
       />

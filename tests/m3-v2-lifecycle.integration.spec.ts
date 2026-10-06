@@ -48,6 +48,12 @@ test('M3 详情页可确认删除投递，并完整管理日程的增删改、�
   const deleteScheduleConfirm = page.getByRole('dialog', { name: '删除这条日程？' });
   await deleteScheduleConfirm.getByRole('button', { name: '删除日程' }).click();
   await expect(schedules.getByText('还没有安排日程。')).toBeVisible();
+  await schedules.getByRole('button', { name: '撤销' }).click();
+  item = schedules.locator('.applications-v2__schedule-list li').filter({ hasText: '技术一面（线上）' });
+  await expect(item).toContainText('已取消');
+  await item.getByRole('button', { name: '删除' }).click();
+  await deleteScheduleConfirm.getByRole('button', { name: '删除日程' }).click();
+  await expect(schedules.getByText('还没有安排日程。')).toBeVisible();
 
   await drawer.getByRole('button', { name: '删除投递' }).click();
   const keepApplication = page.getByRole('dialog', { name: '删除这条投递？' });
@@ -58,5 +64,12 @@ test('M3 详情页可确认删除投递，并完整管理日程的增删改、�
   await expect(deleteApplicationConfirm).toContainText('全部进度历史和日程');
   await deleteApplicationConfirm.getByRole('button', { name: '删除投递' }).click();
   await expect(page.getByRole('row', { name: /M3 日程公司.*客户端工程师/ })).toHaveCount(0);
-  await expect(page.getByText('投递及其进度、日程已删除；删除前的数据已留作恢复副本')).toBeVisible();
+  await expect(page.getByText('已删除「M3 日程公司 · 客户端工程师」')).toBeVisible();
+  await page.locator('.applications-v2__feedback').getByRole('button', { name: '撤销' }).click();
+  await expect(page.getByText('已恢复「M3 日程公司 · 客户端工程师」')).toBeVisible();
+  await expect(row).toBeVisible();
+  await row.getByRole('button', { name: /M3 日程公司/ }).click();
+  await drawer.getByRole('button', { name: '删除投递' }).click();
+  await page.getByRole('dialog', { name: '删除这条投递？' }).getByRole('button', { name: '删除投递' }).click();
+  await expect(page.getByRole('row', { name: /M3 日程公司.*客户端工程师/ })).toHaveCount(0);
 });
