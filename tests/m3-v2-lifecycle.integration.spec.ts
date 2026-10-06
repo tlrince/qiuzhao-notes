@@ -10,7 +10,7 @@ test('M3 详情页可确认删除投递，并完整管理日程的增删改、�
   await page.getByRole('button', { name: /新增投递/ }).first().click();
   const create = page.getByRole('dialog', { name: '新增投递' });
   await create.getByLabel('公司').fill('M3 日程公司');
-  await create.getByLabel('岗位').fill('客户端工程师');
+  await create.getByLabel('岗位 *', { exact: true }).fill('客户端工程师');
   await create.getByRole('button', { name: '保存' }).click();
   const row = page.getByRole('row', { name: /M3 日程公司.*客户端工程师/ });
   await expect(row).toBeVisible();

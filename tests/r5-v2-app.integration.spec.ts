@@ -14,7 +14,7 @@ test('history node details, append, backfill, and correction invoke persisted R1
   await page.getByRole('button', { name: '新增投递' }).first().click();
   const createDialog = page.getByRole('dialog', { name: '新增投递' });
   await createDialog.getByLabel('公司').fill(COMPANY);
-  await createDialog.getByLabel('岗位').fill('客户端工程师');
+  await createDialog.getByLabel('岗位 *', { exact: true }).fill('客户端工程师');
   await createDialog.getByLabel('当前状态').selectOption('draft');
   await createDialog.getByRole('button', { name: '保存' }).click();
   await expect(page.getByRole('combobox', { name: new RegExp(`修改${COMPANY}的状态，当前待投递`) })).toBeVisible();
@@ -99,7 +99,7 @@ test('the sheet records forward progress in one stage as a single visit', async 
   await page.getByRole('button', { name: '新增投递' }).first().click();
   const createDialog = page.getByRole('dialog', { name: '新增投递' });
   await createDialog.getByLabel('公司').fill('同一轮公司');
-  await createDialog.getByLabel('岗位').fill('后端工程师');
+  await createDialog.getByLabel('岗位 *', { exact: true }).fill('后端工程师');
   await createDialog.getByLabel('当前状态').selectOption({ label: '笔试' });
   await createDialog.getByRole('button', { name: '保存' }).click();
   const status = page.getByRole('combobox', { name: /修改同一轮公司的状态/ });
