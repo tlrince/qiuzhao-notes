@@ -40,3 +40,20 @@ test('external destinations accept only valid HTTP and HTTPS URLs', () => {
   assert.equal(model.safeExternalHttpUrl('not a url'), null);
   assert.equal(model.safeExternalHttpUrl(''), null);
 });
+
+test('pasted links without a scheme become https, while text and other schemes are left for validation', () => {
+  assert.equal(model.normalizeUrlInput(' jobs.example.com/apply?id=1 '), 'https://jobs.example.com/apply?id=1');
+  assert.equal(model.normalizeUrlInput('https://jobs.example.com'), 'https://jobs.example.com');
+  assert.equal(model.normalizeUrlInput('boss投递'), 'boss投递');
+  assert.equal(model.normalizeUrlInput('javascript:alert(1)'), 'javascript:alert(1)');
+  assert.equal(model.normalizeUrlInput(''), '');
+});
+
+test('same company and position in the season are reported as earlier applications', () => {
+  const rows = [
+    application('a', 'fall-1', '星河科技', 'AI全栈开发工程师', '杭州', '2026-08-20T00:00:00.000Z'),
+    application('b', 'fall-2', '星河科技', 'AI全栈开发工程师', '', '2026-09-11T00:00:00.000Z'),
+  ];
+  assert.deepEqual(model.sameRoleApplications(rows, 'fall-1', ' 星河科技 ', 'ai全栈开发工程师').map(item => item.id), ['a']);
+  assert.deepEqual(model.sameRoleApplications(rows, 'fall-1', '星河科技', ''), []);
+});

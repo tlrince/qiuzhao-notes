@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { STAGES, type Season } from '../domain/types.js';
 import { calculateV2Analytics } from '../domain/v2/analytics.js';
 import { useV2Data } from './V2DataContext.js';
@@ -14,26 +14,12 @@ import { AnalysisV2Page } from '../features/analytics/AnalysisV2Page.js';
 import { ProgressBoardV2Page } from '../features/progress/ProgressBoardV2Page.js';
 import { DefinitionManager, type DefinitionManagerCommands } from '../features/settings/DefinitionManager.js';
 import { PlatformPreview } from './PlatformPreview.js';
+import { useBackupExport } from './useBackupExport.js';
+import { CreateApplicationDrawer } from '../features/applications/ApplicationDrawers.js';
+import { ToastRegion, useToasts } from '../shared/ui/Toast.js';
 import type { BackupRestorePreview } from '../repositories/v2/backup-commands.js';
 import type { RecoverySnapshotInfo } from '../repositories/storage-v2-contract.js';
 const SetupLink = () => <Link className="button button--secondary" to="/settings">了解工作空间<Icon name="arrow" size={16} /></Link>;
-function AnalyticsScaffold() {
-  const { snapshot } = useV2Data();
-  const seasonId = snapshot.workspace.activeSeasonId;
-  const season = snapshot.seasons.find(item => item.id === seasonId && item.archivedAt === null);
-  const result = season ? calculateV2Analytics(snapshot, { seasonId: season.id }, { now: new Date().toISOString(), timeZone: snapshot.workspace.timeZone }) : null;
-  return <>
-    <PageHeader eyebrow="REFLECT & GROW" title="从数据里，找到方向。" description="回望每一次尝试，让下一步更有把握。" actions={<Link className="button button--secondary" to="/applications"><Icon name="plus" size={16} />新增投递</Link>} />
-    <div className="filter-bar"><div className="section-kicker">{season?.name ?? '尚未选择招聘季'}<span className="dot-separator">·</span><span className="record-count">{result?.recordCount ?? 0} 条记录</span></div><span className="range-static"><Icon name="calendar" size={15} />整个招聘季</span></div>
-    <div className="metrics-grid"><MetricCard label="累计投递" value={String(result?.submittedCount ?? 0)} note="按有效投递经历统计" icon="file" /><MetricCard label="流程进行中" value={String(result?.activeCount ?? 0)} note="当前仍在进行的岗位" icon="clock" /><MetricCard label="推进至面试" value={String(result?.humanInterviewCount ?? 0)} note={`面试触达率 ${result?.interviewRate === null || result?.interviewRate === undefined ? '—' : `${result.interviewRate}%`}`} icon="board" /><MetricCard label="累计收获 Offer" value={String(result?.offerCount ?? 0)} note={`Offer 产出率 ${result?.offerRate === null || result?.offerRate === undefined ? '—' : `${result.offerRate}%`}`} icon="leaf" accent /></div>
-    <div className="analytics-grid"><ChartCard title="累计阶段触达" subtitle="看见每一次真实的推进" aside={<span className="card-tag">按实际触达统计</span>}>{result?.stages.length ? <div className="stage-placeholder">{result.stages.map(stage => <div className="stage-placeholder-row" key={stage.stageId}><span>{stage.name}</span><span className="empty-track"><span className="stage-fill" style={{ width: `${Math.min(100, stage.rate ?? 0)}%` }} /></span><span className="stage-zero">{stage.touchCount}</span></div>)}</div> : <EmptyState compact icon="board" title="还没有进度触达" description="记录投递和招聘环节后，这里会显示实际触达次数。" />}</ChartCard>
-      <ChartCard title="投递活跃度" subtitle="按本地日历统计最近十二周">{result?.activeDayCount ? <p className="analytics-summary">近 12 周有记录的日期：{result.activeDayCount} 天。</p> : <EmptyState compact icon="calendar" title="暂无活跃记录" description="录入投递后，这里会呈现你的行动节奏。" />}</ChartCard>
-      <ChartCard title="渠道表现" subtitle="比较投递、面试与 Offer">{result?.channels.length ? <ul className="overview-list">{result.channels.map(channel => <li key={channel.channelId}><div><strong>{channel.name}</strong><span>面试 {channel.interviewCount} · Offer {channel.offerCount}</span></div><span>{channel.submittedCount} 份投递</span></li>)}</ul> : <EmptyState compact icon="chart" title="暂无渠道数据" description="有投递记录后即可按渠道比较结果。" />}</ChartCard>
-      <ChartCard title="城市分布" subtitle="按已投递岗位的主城市统计">{result?.cities.length ? <ul className="overview-list">{result.cities.map(city => <li key={city.city}><strong>{city.city}</strong><span>{city.count} 份</span></li>)}</ul> : <EmptyState compact icon="target" title="暂无城市数据" description="在投递记录中填写城市后会显示分布。" />}</ChartCard>
-    </div>
-    {!season && <div className="quiet-note"><Icon name="shield" size={15} /><span>先在数据与设置中创建招聘季，统计结果会从同一份本地数据实时计算。</span><SetupLink /></div>}
-  </>;
-}
 function ScaffoldPage({ eyebrow, title, description, children }: { eyebrow: string; title: string; description: string; children: ReactNode }) {
   return <><PageHeader eyebrow={eyebrow} title={title} description={description} />{children}</>;
 }
@@ -61,8 +47,9 @@ function Overview() {
   </ScaffoldPage>;
 }
 function Settings() {
-  const { snapshot, revision, runWorkspaceCommand, backupCommands, runBackupCommand, recordBackupAt } = useV2Data();
+  const { snapshot, revision, runWorkspaceCommand, backupCommands, runBackupCommand } = useV2Data();
   const { platform } = usePlatform();
+  const { exportBackup: exportFullBackup } = useBackupExport();
   const [name, setName] = useState('2026 秋招');
   const [startDate, setStartDate] = useState('2026-07-01');
   const [endDate, setEndDate] = useState('2026-12-31');
@@ -114,20 +101,8 @@ function Settings() {
   };
   const exportBackup = async () => {
     setBackupBusy(true); setMessage('');
-    const exportedAt = new Date().toISOString();
-    try {
-      const backup = await backupCommands.exportAll(exportedAt);
-      const result = await platform.saveBackupFile(`秋招看板备份_${exportedAt.slice(0, 10)}.json`, JSON.stringify(backup, null, 2));
-      if (result === 'cancelled') { setMessage('已取消导出，没有生成备份文件。'); return; }
-      try {
-        // The envelope time identifies the export; lastBackupAt records when
-        // the native save completed or the browser download request was issued.
-        await recordBackupAt(new Date().toISOString());
-        setMessage(result === 'saved' ? '完整备份已保存到所选位置。' : '完整备份下载已发起；浏览器不会自动确认文件是否已写入磁盘。');
-      } catch (cause) {
-        setMessage(`备份文件已${result === 'saved' ? '保存' : '发起下载'}，但最近备份时间未能更新：${cause instanceof Error ? cause.message : String(cause)}`);
-      }
-    } catch (cause) { setMessage(cause instanceof Error ? cause.message : '备份导出失败。'); }
+    try { setMessage(await exportFullBackup()); }
+    catch (cause) { setMessage(cause instanceof Error ? cause.message : '备份导出失败。'); }
     finally { setBackupBusy(false); }
   };
   const chooseBackup = async () => {
@@ -261,6 +236,21 @@ function DesignSystem({ onPreviewChange, preview }: { onPreviewChange: (value: b
     <ConfirmDialog open={confirm} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); setOpen(false); setNotes(''); }} title="放弃未保存的修改？" description="关闭后，这次预览输入的内容将被清除。" confirmLabel="放弃修改" cancelLabel="继续编辑" />
   </ScaffoldPage>;
 }
+function AnalyticsRoute({ seasonId, onSeasonChange }: { seasonId: string | null; onSeasonChange: (seasonId: string) => void }) {
+  const { exportBackup, busy } = useBackupExport();
+  const { toasts, show } = useToasts(3200);
+  const notice = useCallback((message: string, tone: 'success' | 'error' = 'success') => show(message, tone), [show]);
+  const [creating, setCreating] = useState(false);
+  const runExport = () => {
+    if (busy) return;
+    void exportBackup().then(message => notice(message), cause => notice(cause instanceof Error ? cause.message : '备份导出失败。', 'error'));
+  };
+  return <>
+    <AnalysisV2Page seasonId={seasonId} onSeasonChange={value => { if (value) onSeasonChange(value); }} onAddApplication={() => setCreating(true)} onExport={runExport} />
+    <CreateApplicationDrawer open={creating} seasonId={seasonId} onClose={() => setCreating(false)} notice={notice} />
+    <ToastRegion toasts={toasts} />
+  </>;
+}
 function DefaultRoute() { const { search } = useLocation(); return <Navigate to={`/analytics${search}`} replace />; }
 function PageError({ error, reset }: { error: Error; reset: () => void }) {
   return <ScaffoldPage eyebrow="SOMETHING WENT WRONG" title="这个页面出了点问题。" description="页面显示失败，但已保存的数据没有被修改。可以重试，或先去导出一份备份。">
@@ -278,7 +268,6 @@ function seasonSubmittedCount(snapshot: ReturnType<typeof useV2Data>['snapshot']
 }
 export function App() {
   const { snapshot, saveStatus, lastError, dismissError, runWorkspaceCommand } = useV2Data();
-  const navigate = useNavigate();
   const location = useLocation();
   const [preview, setPreview] = useState(false);
   const [workspaceError, setWorkspaceError] = useState('');
@@ -291,5 +280,5 @@ export function App() {
     void runWorkspaceCommand((commands, expectedRevision) => commands.setActiveSeason({ expectedRevision, seasonId })).catch(cause => setWorkspaceError(cause instanceof Error ? cause.message : '切换招聘季失败'));
   };
   const workspace = { ...snapshot.workspace, activeSeasonId };
-  return <AppShell workspace={workspace} seasons={snapshot.seasons.filter(season => season.archivedAt === null)} submittedCount={submittedCount} saveStatus={saveStatus as SaveStatus} saveError={lastError} onDismissSaveError={dismissError} onSeasonChange={onSeasonChange}>{workspaceError && <p className="platform-error" role="alert">{workspaceError}</p>}<ErrorBoundary resetKey={location.pathname} fallback={(error, reset) => <PageError error={error} reset={reset} />}><Routes><Route path="/" element={<DefaultRoute />} /><Route path="/analytics" element={<AnalysisV2Page seasonId={activeSeasonId} onSeasonChange={seasonId => { if (seasonId) onSeasonChange(seasonId); }} onAddApplication={() => navigate('/applications')} />} /><Route path="/overview" element={<Overview />} /><Route path="/applications" element={<ApplicationsV2Page seasonId={activeSeasonId} />} /><Route path="/board" element={<ProgressBoardV2Page seasonId={activeSeasonId} />} /><Route path="/settings" element={<Settings />} /><Route path="/settings/definitions" element={<DefinitionSettings />} /><Route path="/design-system" element={<DesignSystem preview={preview} onPreviewChange={setPreview} />} /><Route path="*" element={<ScaffoldPage eyebrow="FIND YOUR WAY" title="这一页，还没有留下记录。" description="页面可能不存在，回到熟悉的工作空间继续吧。"><Link className="button button--primary" to="/analytics">返回深度分析<Icon name="arrow" size={16} /></Link></ScaffoldPage>} /></Routes></ErrorBoundary></AppShell>;
+  return <AppShell workspace={workspace} seasons={snapshot.seasons.filter(season => season.archivedAt === null)} submittedCount={submittedCount} saveStatus={saveStatus as SaveStatus} saveError={lastError} onDismissSaveError={dismissError} onSeasonChange={onSeasonChange}>{workspaceError && <p className="platform-error" role="alert">{workspaceError}</p>}<ErrorBoundary resetKey={location.pathname} fallback={(error, reset) => <PageError error={error} reset={reset} />}><Routes><Route path="/" element={<DefaultRoute />} /><Route path="/analytics" element={<AnalyticsRoute seasonId={activeSeasonId} onSeasonChange={onSeasonChange} />} /><Route path="/overview" element={<Overview />} /><Route path="/applications" element={<ApplicationsV2Page seasonId={activeSeasonId} />} /><Route path="/board" element={<ProgressBoardV2Page seasonId={activeSeasonId} />} /><Route path="/settings" element={<Settings />} /><Route path="/settings/definitions" element={<DefinitionSettings />} /><Route path="/design-system" element={<DesignSystem preview={preview} onPreviewChange={setPreview} />} /><Route path="*" element={<ScaffoldPage eyebrow="FIND YOUR WAY" title="这一页，还没有留下记录。" description="页面可能不存在，回到熟悉的工作空间继续吧。"><Link className="button button--primary" to="/analytics">返回深度分析<Icon name="arrow" size={16} /></Link></ScaffoldPage>} /></Routes></ErrorBoundary></AppShell>;
 }

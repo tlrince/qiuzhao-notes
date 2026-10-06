@@ -180,3 +180,23 @@ export function quickStatusTone(key: string, definitions: R1DefinitionsSnapshot)
   const color = status?.color ?? '#78716c';
   return { color, background: `${color}1a` };
 }
+
+/** Display label of a dropdown key, used for filter chips. */
+export function quickStatusKeyLabel(key: string, definitions: R1DefinitionsSnapshot): string {
+  const fixed: Record<string, string> = { draft: '待投递', submitted: '已投递', offer: 'Offer', offer_accepted: '已接受 Offer', offer_declined: '已拒绝 Offer', failed: '挂掉', withdrawn: '主动退出' };
+  if (fixed[key]) return fixed[key];
+  if (key.startsWith('stage:')) {
+    const stageId = key.slice('stage:'.length);
+    const named = definitions.statuses.find(status => status.stageId === stageId && (status.semantic === 'screening' || status.semantic === 'pool'));
+    return named?.name ?? definitions.stages.find(stage => stage.id === stageId)?.name ?? stageId;
+  }
+  return definitions.statuses.find(status => status.id === key.slice('status:'.length))?.name ?? key;
+}
+
+/** Process order for chips: draft, submission, stages by sort order, then outcomes. */
+export function quickStatusKeyRank(key: string, definitions: R1DefinitionsSnapshot): number {
+  const fixed: Record<string, number> = { draft: 0, submitted: 1, offer: 100_000, offer_accepted: 100_001, offer_declined: 100_002, failed: 100_003, withdrawn: 100_004 };
+  if (fixed[key] !== undefined) return fixed[key]!;
+  if (key.startsWith('stage:')) return 10 + (definitions.stages.find(stage => stage.id === key.slice('stage:'.length))?.sortOrder ?? 90_000);
+  return 100_005;
+}

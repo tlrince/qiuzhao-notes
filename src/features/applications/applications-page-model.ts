@@ -25,3 +25,22 @@ export function safeExternalHttpUrl(value: string): string | null {
     return null;
   }
 }
+
+/** Accepts a pasted address without a scheme (jobs.example.com/…) as an https link. */
+export function normalizeUrlInput(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || /^[a-z][a-z\d+.-]*:/i.test(trimmed) || /\s/.test(trimmed)) return trimmed;
+  return /^[^/]+\.[^/]+/.test(trimmed) ? `https://${trimmed}` : trimmed;
+}
+
+/** Earlier applications for the same company and position; different periods are allowed. */
+export function sameRoleApplications<T extends Pick<ApplicationV2, 'seasonId' | 'company' | 'role'>>(
+  applications: readonly T[],
+  seasonId: string,
+  company: string,
+  role: string,
+): T[] {
+  const key = (value: string) => value.trim().toLocaleLowerCase();
+  if (!key(company) || !key(role)) return [];
+  return applications.filter(application => application.seasonId === seasonId && key(application.company) === key(company) && key(application.role) === key(role));
+}

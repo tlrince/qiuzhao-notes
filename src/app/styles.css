@@ -111,3 +111,7 @@ progress::-webkit-progress-bar { background: var(--color-border); } progress::-w
 .stage-fill { display: block; height: 100%; border-radius: inherit; background: var(--color-accent); }
 .analytics-summary { min-height: 130px; display: grid; place-items: center; color: var(--color-muted); font-size: 12px; }
 @media (max-width: 767px) { .overview-list { padding-inline: 18px; }.overview-list li { align-items: flex-start; }.overview-list .page-actions { flex-wrap: wrap; justify-content: flex-end; }.settings-season-form { padding-inline: 18px; }.restore-preview { margin-inline: 18px; padding: 15px; }.recovery-capacity { padding-inline: 18px; } }
+.toast-region { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+.toast { background: #2b2118; color: #fffefc; padding: 9px 18px; border-radius: 999px; font-size: 13px; box-shadow: 0 10px 30px -8px rgba(0, 0, 0, .4); animation: toast-in .25s; max-width: min(90vw, 560px); }
+.toast--error { background: #a13628; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }

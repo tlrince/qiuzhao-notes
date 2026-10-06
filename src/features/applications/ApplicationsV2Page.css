@@ -7,6 +7,8 @@
   padding: 1.25rem clamp(1rem, 2vw, 2rem) 2rem;
 }
 
+.applications-v2--embedded { padding: 0; }
+
 .applications-v2 button,
 .applications-v2 input,
 .applications-v2 select,
@@ -176,3 +178,16 @@
   .applications-v2__import-preview { padding: 0.8rem; }
   .applications-v2__import-preview-heading { flex-direction: column; }
 }
+
+.applications-v2__header-link { display: inline-flex; align-items: center; min-height: 2.35rem; padding: 0.45rem 0.8rem; border: 1px solid var(--applications-border); border-radius: 3px; background: #f7f6f0; color: #55594f; font-size: 0.86rem; }
+.applications-v2__header-link:hover { background: #efeee6; }
+.applications-v2__feedback--error { border-color: #d8aaa2; background: #fcf1ef; color: #813d32; }
+.applications-v2__import-details { margin: 0.4rem 0 0.8rem; color: var(--applications-muted); font-size: 0.8rem; }
+.applications-v2__import-details summary { cursor: pointer; color: #55594f; }
+.applications-v2__import-details ul { display: grid; gap: 0.25rem; max-height: 14rem; overflow: auto; margin: 0.5rem 0 0; padding-left: 1.2rem; }
+.applications-v2__import-actions { display: grid; gap: 0.8rem; justify-items: start; }
+.applications-v2__import-actions > button { min-height: 2.35rem; padding: 0.45rem 0.8rem; border: 1px solid #737e5d; border-radius: 3px; background: #707b59; color: white; cursor: pointer; }
+.applications-v2__import-actions > button:disabled { border-color: #deded4; background: #f0efe9; color: #818278; cursor: not-allowed; }
+.applications-v2__import-replace { color: var(--applications-muted); font-size: 0.8rem; }
+.applications-v2__import-replace summary { cursor: pointer; }
+.applications-v2__import-replace > p { margin: 0.6rem 0; }

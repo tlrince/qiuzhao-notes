@@ -1,236 +1,253 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import type { ProgressTableRow } from '../../domain/v2/table.js';
+import { useCallback, useMemo, useState, type CSSProperties } from 'react';
 import { projectProgressTable } from '../../domain/v2/table.js';
-import { Drawer } from '../../shared/ui/Dialog.js';
+import { Drawer, ConfirmDialog } from '../../shared/ui/Dialog.js';
 import { Button, PageHeader } from '../../shared/ui/components.js';
-import { usePlatform } from '../../app/PlatformContext.js';
+import { Icon, type IconName } from '../../shared/ui/Icon.js';
+import { ToastRegion, useToasts } from '../../shared/ui/Toast.js';
 import { useV2Data } from '../../app/V2DataContext.js';
-import type { ProgressStatusEditorCommand } from '../applications/progress-status-editor.js';
-import { ProgressHistory } from './ProgressHistory.js';
-import { ProgressHistoryEditor, type ProgressHistoryAction } from './ProgressHistoryEditor.js';
-import { ProgressTable, type ProgressTableProps } from './ProgressTable.js';
-import { parseProgressTableColumnPreferences, serializeProgressTableColumnPreferences, type ProgressTableColumnPreferences } from './table-layout.js';
+import { ApplicationDetailDrawer, CreateApplicationDrawer, useApplicationActions, type NoticeTone } from '../applications/ApplicationDrawers.js';
 import { localBusinessDate } from '../applications/progress-status-editor.js';
+import { ApplicationSheet } from './ApplicationSheet.js';
+import { ProgressHistoryEditor, type ProgressHistoryAction } from './ProgressHistoryEditor.js';
+import { buildQuickStatusChange, quickStatusTone, type QuickStatusOption, type QuickStatusResult } from './quick-status.js';
+import { ALL, buildSheetItems, filterSheetItems, matchesSearchAndChannel, sheetStats, sheetStatusChips, sortSheetItems, type SheetItem, type SheetSort } from './sheet-model.js';
+import './ProgressBoard.css';
 
-type DrawerState =
-  | { applicationId: string; mode: 'history' }
-  | { applicationId: string; mode: 'status'; action: ProgressHistoryAction }
-  | { applicationId: string; mode: 'tracking-url' };
-const COLUMN_PREFERENCE_KEY = 'progress-table.columns.v1';
+const SORTS: Array<[SheetSort, string]> = [
+  ['apply-desc', '投递日期 · 新 → 旧'],
+  ['apply-asc', '投递日期 · 旧 → 新'],
+  ['update-desc', '最近更新'],
+  ['create-desc', '最新创建'],
+  ['company', '公司名排序'],
+];
 
-function BoardEmpty({ seasonId }: { seasonId: string | null }) {
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // WebKit views may refuse the async clipboard; fall back to a selection copy.
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    const copied = document.execCommand('copy');
+    area.remove();
+    if (!copied) throw new Error('复制失败，请手动复制');
+  }
+}
+
+function BoardEmpty({ seasonId, onCreate }: { seasonId: string | null; onCreate: () => void }) {
   return <div className="board-empty-card">
     <h2>{seasonId ? '这个招聘季还没有投递记录' : '还没有招聘季'}</h2>
-    <p>{seasonId ? '新增一条投递后，进度表会按真实记录展示状态和历史。' : '先在数据与设置中创建招聘季，再开始记录机会。'}</p>
+    <p>{seasonId ? '新增一条投递，记录公司、岗位和当前状态。' : '先在数据与设置中创建招聘季，再开始记录机会。'}</p>
+    {seasonId && <Button onClick={onCreate}><Icon name="plus" size={16} />新增第一条投递</Button>}
   </div>;
 }
 
-/** M4 view over the same v2 snapshot used by M3; writes remain command-only. */
+/** offer.html-style board over the shared v2 snapshot; every write goes through commands. */
 export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
-  const { snapshot, revision, runCommand, runWorkspaceCommand } = useV2Data();
-  const { platform } = usePlatform();
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [drawer, setDrawer] = useState<DrawerState | null>(null);
-  const [trackingUrl, setTrackingUrl] = useState('');
-  const [savingUrl, setSavingUrl] = useState(false);
-  const [urlError, setUrlError] = useState('');
-  const storedColumnPreferences = snapshot.settings.preferences[COLUMN_PREFERENCE_KEY];
-  const [columnPreferences, setColumnPreferences] = useState<ProgressTableColumnPreferences>(() => parseProgressTableColumnPreferences(storedColumnPreferences));
+  const { snapshot, revision, runCommand } = useV2Data();
+  const { toasts, show } = useToasts();
+  const notice = useCallback((message: string, tone: NoticeTone = 'success') => show(message, tone), [show]);
+  const actions = useApplicationActions(notice);
+  const [search, setSearch] = useState('');
+  const [channelId, setChannelId] = useState(ALL);
+  const [statusKey, setStatusKey] = useState(ALL);
+  const [sort, setSort] = useState<SheetSort>('apply-desc');
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
+  const [creating, setCreating] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ applicationId: string; action: ProgressHistoryAction } | null>(null);
+  const [pendingSubmission, setPendingSubmission] = useState<{ item: SheetItem; option: QuickStatusOption } | null>(null);
+  const [deleting, setDeleting] = useState<SheetItem | null>(null);
+  const today = localBusinessDate();
 
-  useEffect(() => {
-    setColumnPreferences(parseProgressTableColumnPreferences(storedColumnPreferences));
-  }, [storedColumnPreferences]);
-
-  const persistColumnPreferences = (next: ProgressTableColumnPreferences) => {
-    setColumnPreferences(next);
-    void runWorkspaceCommand((commands, expectedRevision) => commands.setPreference({
-      expectedRevision,
-      key: COLUMN_PREFERENCE_KEY,
-      value: serializeProgressTableColumnPreferences(next),
-    })).catch(error => setUrlError(error instanceof Error ? error.message : '保存表格列设置失败'));
-  };
-
-  const applications = useMemo(
-    () => seasonId ? snapshot.applications.filter(application => application.seasonId === seasonId) : [],
-    [snapshot.applications, seasonId],
-  );
-  const progressRecords = useMemo(() => {
-    const applicationIds = new Set(applications.map(application => application.id));
-    return snapshot.progressRecords.filter(record => applicationIds.has(record.applicationId));
+  const season = seasonId ? snapshot.seasons.find(item => item.id === seasonId && item.archivedAt === null) ?? null : null;
+  const applications = useMemo(() => season ? snapshot.applications.filter(application => application.seasonId === season.id) : [], [snapshot.applications, season]);
+  const records = useMemo(() => {
+    const ids = new Set(applications.map(application => application.id));
+    return snapshot.progressRecords.filter(record => ids.has(record.applicationId));
   }, [applications, snapshot.progressRecords]);
-  const projection = useMemo(() => projectProgressTable({
-    applications,
-    progressRecords,
-    definitions: snapshot.definitions,
-    schedules: snapshot.schedules,
-    now: localBusinessDate(),
-    ...(statusFilter ? { filters: { currentStatusIds: [statusFilter] } } : {}),
-  }), [applications, progressRecords, snapshot.definitions, snapshot.schedules, statusFilter]);
-  const visibleRows = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return projection.rows;
-    return projection.rows.filter(row => `${row.application.company}\n${row.application.role}\n${row.application.city}`.toLocaleLowerCase().includes(normalized));
-  }, [projection.rows, query]);
-  const visibleProjection = useMemo(() => ({ ...projection, rows: visibleRows }), [projection, visibleRows]);
-  const selectedRow = drawer ? projection.rows.find(row => row.application.id === drawer.applicationId) ?? null : null;
-  const selectedRecord = drawer ? snapshot.progressRecords.find(record => record.applicationId === drawer.applicationId) ?? null : null;
+  const projection = useMemo(() => projectProgressTable({ applications, progressRecords: records, definitions: snapshot.definitions, schedules: snapshot.schedules, now: today }), [applications, records, snapshot.definitions, snapshot.schedules, today]);
+  const items = useMemo(() => buildSheetItems(projection.rows, records, snapshot.channels, today), [projection.rows, records, snapshot.channels, today]);
+  const searched = useMemo(() => items.filter(item => matchesSearchAndChannel(item, { search, channelId })), [items, search, channelId]);
+  const visible = useMemo(() => sortSheetItems(filterSheetItems(items, { search, channelId, statusKey }), sort), [items, search, channelId, statusKey, sort]);
+  const chips = useMemo(() => sheetStatusChips(searched, snapshot.definitions, statusKey), [searched, snapshot.definitions, statusKey]);
+  const stats = useMemo(() => sheetStats(items), [items]);
+  const usedChannels = snapshot.channels.filter(channel => channel.archivedAt === null || applications.some(application => application.channelId === channel.id));
+  const filtering = search.trim() !== '' || channelId !== ALL || statusKey !== ALL;
+  const editorRecord = editor ? snapshot.progressRecords.find(record => record.applicationId === editor.applicationId) ?? null : null;
+  const editorApplication = editor ? snapshot.applications.find(application => application.id === editor.applicationId) ?? null : null;
 
-  const openDrawer = (row: ProgressTableRow, mode: DrawerState['mode']) => {
-    if (mode === 'tracking-url') setTrackingUrl(row.application.trackingUrl);
-    setUrlError('');
-    if (mode === 'status') setDrawer({ applicationId: row.application.id, mode, action: { kind: 'append' } });
-    else setDrawer({ applicationId: row.application.id, mode });
-  };
+  const setBusy = (applicationId: string, busy: boolean) => setBusyIds(current => {
+    const next = new Set(current);
+    if (busy) next.add(applicationId); else next.delete(applicationId);
+    return next;
+  });
 
-  const openUrl: NonNullable<ProgressTableProps['onOpenUrl']> = (url) => {
-    void platform.openExternal(url).catch(error => {
-      setUrlError(error instanceof Error ? error.message : '无法打开网址');
-    });
-  };
-
-  const saveTrackingUrl = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!selectedRow) return;
-    setSavingUrl(true);
-    setUrlError('');
+  const appendSteps = async (item: SheetItem, result: Extract<QuickStatusResult, { kind: 'append' }>) => {
+    const applicationId = item.row.application.id;
+    setBusy(applicationId, true);
     try {
-      await runCommand(commands => commands.updateFields({
-        applicationId: selectedRow.application.id,
-        expectedRevision: revision,
-        patch: { trackingUrl: trackingUrl.trim() },
-      }));
-      setDrawer(null);
-    } catch (error) {
-      setUrlError(error instanceof Error ? error.message : '保存网址失败');
+      await runCommand((commands, expectedRevision) => commands.appendProgressSteps({ applicationId, expectedRevision, steps: result.steps }));
+      notice(`状态已更新为「${result.label}」`);
+    } catch (cause) {
+      notice(cause instanceof Error ? cause.message : '状态保存失败，请重试', 'error');
     } finally {
-      setSavingUrl(false);
+      setBusy(applicationId, false);
     }
   };
 
-  const submitProgress = async (request: ProgressStatusEditorCommand) => {
-    if (request.kind === 'append') await runCommand(commands => commands.appendProgress(request.input));
-    else await runCommand(commands => commands.correctProgress(request.input));
-    if (drawer?.mode === 'status') setDrawer({ applicationId: drawer.applicationId, mode: 'history' });
+  const changeStatus = (item: SheetItem, option: QuickStatusOption, withSubmission = false) => {
+    const result = buildQuickStatusChange({ definitions: snapshot.definitions, record: item.record, option, today, commandId: globalThis.crypto.randomUUID(), withSubmission });
+    if (result.kind === 'noop') return;
+    if (result.kind === 'needs-reopen') {
+      notice('这条流程已经结束；恢复流程需要写一句原因', 'error');
+      setEditor({ applicationId: item.row.application.id, action: { kind: 'append' } });
+      return;
+    }
+    if (result.kind === 'needs-submission') { setPendingSubmission({ item, option }); return; }
+    void appendSteps(item, result);
   };
 
-  const saveApplicationField: NonNullable<ProgressTableProps['onSaveApplicationField']> = async (row, field, value) => {
-    if (field === 'notes') {
-      await runCommand(commands => commands.updateFields({
-        applicationId: row.application.id,
-        expectedRevision: revision,
-        patch: { notes: value ?? '' },
-      }));
-      return;
-    }
-    if (field === 'trackingUrl') {
-      await runCommand(commands => commands.updateFields({
-        applicationId: row.application.id,
-        expectedRevision: revision,
-        patch: { trackingUrl: value ?? '' },
-      }));
-      return;
-    }
-
+  const saveAppliedOn = async (item: SheetItem, value: string | null) => {
+    const { row } = item;
+    const applicationId = row.application.id;
     const submittedEvent = row.events.find(event => event.semantics.semantic === 'submitted');
     if (value === null) {
       if (!submittedEvent) return;
-      await runCommand(commands => commands.invalidateProgress({
-        applicationId: row.application.id,
-        expectedRevision: revision,
-        eventId: submittedEvent.id,
-      }));
-      return;
+      await runCommand((commands, expectedRevision) => commands.invalidateProgress({ applicationId, expectedRevision, eventId: submittedEvent.id }));
+    } else if (submittedEvent) {
+      await runCommand((commands, expectedRevision) => commands.correctProgress({ applicationId, expectedRevision, eventId: submittedEvent.id, command: { commandId: globalThis.crypto.randomUUID(), statusId: submittedEvent.statusId, occurredOn: value, notes: submittedEvent.notes } }));
+    } else {
+      const submission = snapshot.definitions.statuses.find(status => status.semantic === 'submitted' && status.archivedAt === null);
+      if (!submission) throw new Error('没有可用的「已投递」状态');
+      const first = row.events[0];
+      if (first && value > first.occurredOn) throw new Error(`投递日期不能晚于第一条进度（${first.occurredOn}）`);
+      await runCommand((commands, expectedRevision) => commands.appendProgress({ applicationId, expectedRevision, command: { commandId: globalThis.crypto.randomUUID(), statusId: submission.id, occurredOn: value, ...(first ? { mode: 'backfill' as const, beforeEventId: first.id } : {}) } }));
     }
-    if (submittedEvent) {
-      await runCommand(commands => commands.correctProgress({
-        applicationId: row.application.id,
-        expectedRevision: revision,
-        eventId: submittedEvent.id,
-        command: { commandId: crypto.randomUUID(), statusId: submittedEvent.statusId, occurredOn: value, notes: submittedEvent.notes },
-      }));
-      return;
-    }
-    const firstEvent = row.events[0];
-    await runCommand(commands => commands.appendProgress({
-      applicationId: row.application.id,
-      expectedRevision: revision,
-      command: {
-        commandId: crypto.randomUUID(),
-        statusId: 'submitted',
-        occurredOn: value,
-        mode: firstEvent ? 'backfill' : 'new_visit',
-        ...(firstEvent ? { beforeEventId: firstEvent.id } : {}),
-      },
-    }));
+    notice('投递日期已保存');
   };
 
-  const onStatus: NonNullable<ProgressTableProps['onRequestStatusChange']> = row => openDrawer(row, 'status');
-  const onHistory: NonNullable<ProgressTableProps['onViewHistory']> = row => openDrawer(row, 'history');
-  const onTrackingUrl: NonNullable<ProgressTableProps['onEditTrackingUrl']> = row => openDrawer(row, 'tracking-url');
-  const onSelect: NonNullable<ProgressTableProps['onSelectApplication']> = row => openDrawer(row, 'history');
+  const saveNotes = async (item: SheetItem, value: string) => {
+    await runCommand((commands, expectedRevision) => commands.updateFields({ applicationId: item.row.application.id, expectedRevision, patch: { notes: value } }));
+    notice('备注已保存');
+  };
+
+  const copy = (text: string, label: string) => {
+    void copyText(text).then(() => notice(`${label}已复制`), cause => notice(cause instanceof Error ? cause.message : '复制失败', 'error'));
+  };
+
+  const toggleExpand = (applicationId: string) => setExpandedIds(current => {
+    const next = new Set(current);
+    if (next.has(applicationId)) next.delete(applicationId); else next.add(applicationId);
+    return next;
+  });
+
+  const submitEditor = async (command: Parameters<typeof actions.applyProgressCommand>[0]) => {
+    await actions.applyProgressCommand(command);
+    setEditor(null);
+  };
+
+  const clearFilters = () => { setSearch(''); setChannelId(ALL); setStatusKey(ALL); };
+  const statCards: Array<{ label: string; value: string; icon: IconName; color: string; background: string }> = [
+    { label: '总投递', value: String(stats.total), icon: 'file', color: '#e8590c', background: '#fdeee1' },
+    { label: '投递公司', value: String(stats.companies), icon: 'building', color: '#0f766e', background: '#f0fdfa' },
+    { label: '流程中', value: String(stats.active), icon: 'activity', color: '#2563eb', background: '#eff6ff' },
+    { label: 'Offer', value: String(stats.offers), icon: 'award', color: '#16a34a', background: '#f0fdf4' },
+    { label: '泡池中', value: String(stats.pool), icon: 'clock', color: '#d97706', background: '#fffbeb' },
+    { label: '已挂掉', value: String(stats.failed), icon: 'x-circle', color: '#dc2626', background: '#fef2f2' },
+    { label: 'Offer 率', value: stats.offerRate === null ? '—' : `${stats.offerRate}%`, icon: 'trend', color: '#7c3aed', background: '#f5f3ff' },
+  ];
 
   return <>
-    <PageHeader eyebrow="REAL PROGRESS, CLEARLY SEEN" title="每一段经历，都有迹可循。" description="表格与历史流程读取同一份有效进度记录。" actions={<Button onClick={() => {
-      const first = projection.rows[0];
-      if (first) openDrawer(first, 'status');
-    }} disabled={!projection.rows.length}>记录状态</Button>} />
-    {!seasonId || !applications.length ? <BoardEmpty seasonId={seasonId} /> : <>
-      <div className="list-toolbar" aria-label="进度表筛选">
-        <input aria-label="搜索公司、岗位或城市" placeholder="搜索公司、岗位或城市" value={query} onChange={event => setQuery(event.target.value)} />
-        <select aria-label="当前状态筛选" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
-          <option value="">全部当前状态</option>
-          {snapshot.definitions.statuses.map(status => <option key={status.id} value={status.id}>{status.name}{status.archivedAt ? ' · 已归档' : ''}</option>)}
+    <PageHeader eyebrow="REAL PROGRESS, CLEARLY SEEN" title="每一段经历，都有迹可循。" description="一行一条投递，状态直接在表格里改；展开一行可以看完整的进度流程。" actions={<Button onClick={() => setCreating(true)} disabled={!season}><Icon name="plus" size={16} />新增投递</Button>} />
+    {!season || !applications.length ? <BoardEmpty seasonId={season?.id ?? null} onCreate={() => setCreating(true)} /> : <>
+      <section className="board-stats" aria-label="投递概况">
+        {statCards.map(card => <div className="board-stat" key={card.label}>
+          <span className="board-stat__icon" style={{ color: card.color, background: card.background }}><Icon name={card.icon} size={18} /></span>
+          <div><div className="board-stat__value">{card.value}</div><div className="board-stat__label">{card.label}</div></div>
+        </div>)}
+      </section>
+      <section className="board-toolbar" aria-label="筛选与排序">
+        <label className="board-search"><Icon name="search" size={15} /><span className="sheet__sr-only">搜索</span><input type="search" placeholder="搜索公司 / 岗位 / 城市 / 备注…" value={search} onChange={event => setSearch(event.target.value)} /></label>
+        <select className="board-select" aria-label="按渠道筛选" value={channelId} onChange={event => setChannelId(event.target.value)}>
+          <option value={ALL}>全部渠道</option>
+          {usedChannels.map(channel => <option key={channel.id} value={channel.id}>{channel.name}</option>)}
         </select>
-      </div>
-      {urlError && !drawer ? <p role="alert" className="form-error">{urlError}</p> : null}
-      <ProgressTable
-        projection={visibleProjection}
+        <select className="board-select" aria-label="排序" value={sort} onChange={event => setSort(event.target.value as SheetSort)}>
+          {SORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <span className="board-count">{filtering
+          ? <>显示 {visible.length} 条 / 共 {items.length} 条 <button type="button" className="board-link" onClick={clearFilters}>清除筛选</button></>
+          : <>共 {items.length} 条投递 · {stats.companies} 家公司</>}</span>
+      </section>
+      <nav className="board-chips" aria-label="按状态筛选">
+        <button type="button" className={`board-chip${statusKey === ALL ? ' board-chip--on' : ''}`} aria-pressed={statusKey === ALL} onClick={() => setStatusKey(ALL)}>全部 <b>{searched.length}</b></button>
+        {chips.map(chip => {
+          const tone = quickStatusTone(chip.key, snapshot.definitions);
+          return <button type="button" key={chip.key} className={`board-chip${statusKey === chip.key ? ' board-chip--on' : ''}`} aria-pressed={statusKey === chip.key} style={{ '--c': tone.color } as CSSProperties} onClick={() => setStatusKey(statusKey === chip.key ? ALL : chip.key)}><span className="board-chip__dot" />{chip.label} <b>{chip.count}</b></button>;
+        })}
+      </nav>
+      <ApplicationSheet
+        items={visible}
         definitions={snapshot.definitions}
-        columnPreferences={columnPreferences}
-        onColumnPreferencesChange={persistColumnPreferences}
-        onSaveApplicationField={saveApplicationField}
-        onRequestStatusChange={onStatus}
-        onEditTrackingUrl={onTrackingUrl}
-        onOpenUrl={openUrl}
-        onViewHistory={onHistory}
-        onSelectApplication={onSelect}
+        columns={projection.columns}
+        busyIds={busyIds}
+        expandedIds={expandedIds}
+        now={Date.now()}
+        emptyMessage={<>没有符合筛选条件的记录　<button type="button" className="board-link" onClick={clearFilters}>清除筛选</button></>}
+        onToggleExpand={toggleExpand}
+        onStatusChange={changeStatus}
+        onSaveAppliedOn={saveAppliedOn}
+        onSaveNotes={saveNotes}
+        onOpenUrl={url => void actions.openUrl(url)}
+        onCopy={copy}
+        onEdit={item => setDetailId(item.row.application.id)}
+        onDelete={item => setDeleting(item)}
+        onHistoryAction={(item, action) => setEditor({ applicationId: item.row.application.id, action })}
       />
     </>}
 
     <Drawer
-      open={!!drawer && !!selectedRow && !!selectedRecord}
-      onClose={() => setDrawer(null)}
-      title={drawer?.mode === 'status' ? `记录状态 · ${selectedRow?.application.company ?? ''}` : drawer?.mode === 'tracking-url' ? '投递网址' : `进度历史 · ${selectedRow?.application.company ?? ''}`}
-      {...(selectedRow ? { description: `${selectedRow.application.role} · ${selectedRow.application.city || '城市待补充'}` } : {})}
+      open={!!editor && !!editorRecord && !!editorApplication}
+      onClose={() => setEditor(null)}
+      title={editor?.action.kind === 'correct' ? '纠正历史事件' : editor?.action.kind === 'backfill' ? '补录历史' : `记录状态 · ${editorApplication?.company ?? ''}`}
+      {...(editorApplication ? { description: `${editorApplication.role}${editorApplication.city ? ` · ${editorApplication.city}` : ''}` } : {})}
     >
-      {drawer?.mode === 'status' && selectedRecord ? <ProgressHistoryEditor
-        key={`${drawer.applicationId}:${drawer.action.kind}:${drawer.action.kind === 'append' ? '' : drawer.action.kind === 'backfill' ? drawer.action.beforeEventId : drawer.action.eventId}`}
-        action={drawer.action}
+      {editor && editorRecord ? <ProgressHistoryEditor
+        key={`${editor.applicationId}:${editor.action.kind}:${editor.action.kind === 'append' ? '' : editor.action.kind === 'backfill' ? editor.action.beforeEventId : editor.action.eventId}`}
+        action={editor.action}
         definitions={snapshot.definitions}
-        record={selectedRecord}
+        record={editorRecord}
         expectedRevision={revision}
-        onSubmit={submitProgress}
-        onCancel={() => setDrawer({ applicationId: drawer.applicationId, mode: 'history' })}
+        onSubmit={submitEditor}
+        onCancel={() => setEditor(null)}
       /> : null}
-      {drawer?.mode === 'history' && selectedRow && selectedRecord ? <>
-        <p><strong>当前状态：</strong>{selectedRow.current.statusName}</p>
-        <ProgressHistory
-          events={selectedRow.events}
-          auditEvents={selectedRecord.events}
-          {...(selectedRecord.migrationReview ? { uncertainEdges: selectedRecord.migrationReview.uncertainEdges } : {})}
-          onAppend={() => setDrawer({ applicationId: selectedRow.application.id, mode: 'status', action: { kind: 'append' } })}
-          onBackfill={beforeEventId => setDrawer({ applicationId: selectedRow.application.id, mode: 'status', action: { kind: 'backfill', beforeEventId } })}
-          onCorrect={event => setDrawer({ applicationId: selectedRow.application.id, mode: 'status', action: { kind: 'correct', eventId: event.id } })}
-        />
-      </> : null}
-      {drawer?.mode === 'tracking-url' && selectedRow ? <form className="application-form" onSubmit={saveTrackingUrl}>
-        <p>跟踪网址优先展示；招聘职位页仍保存在独立的职位链接中。</p>
-        <label>招聘系统跟踪网址<input type="url" value={trackingUrl} onChange={event => setTrackingUrl(event.target.value)} placeholder="https://" /></label>
-        <p className="muted">职位页：{selectedRow.application.jobUrl || '未填写'}</p>
-        {urlError ? <p role="alert" className="form-error">{urlError}</p> : null}
-        <div className="page-actions"><Button type="button" variant="secondary" onClick={() => setDrawer(null)}>取消</Button><Button disabled={savingUrl}>{savingUrl ? '保存中…' : '保存网址'}</Button></div>
-      </form> : null}
     </Drawer>
+    <ConfirmDialog
+      open={!!pendingSubmission}
+      onCancel={() => setPendingSubmission(null)}
+      onConfirm={() => { const pending = pendingSubmission; setPendingSubmission(null); if (pending) changeStatus(pending.item, pending.option, true); }}
+      title="这条还没有投递记录"
+      description={`要先记录「已投递」（日期为今天 ${today}，之后可以在投递日期列修改），再记录「${pendingSubmission?.option.label ?? ''}」吗？`}
+      confirmLabel="记录投递并更新状态"
+      cancelLabel="取消"
+    />
+    <ConfirmDialog
+      open={!!deleting}
+      onCancel={() => setDeleting(null)}
+      onConfirm={() => { const target = deleting; setDeleting(null); if (target) void actions.deleteApplication(target.row.application).catch(cause => notice(cause instanceof Error ? cause.message : '删除失败', 'error')); }}
+      title="删除这条记录？"
+      description={`「${deleting?.row.application.company ?? ''} · ${deleting?.row.application.role ?? ''}」及其进度和日程会被删除；删除前的数据会留作恢复副本。`}
+      confirmLabel="删除"
+      cancelLabel="取消"
+    />
+    <CreateApplicationDrawer open={creating} seasonId={season?.id ?? null} onClose={() => setCreating(false)} notice={notice} />
+    <ApplicationDetailDrawer applicationId={detailId} onClose={() => setDetailId(null)} notice={notice} />
+    <ToastRegion toasts={toasts} />
   </>;
 }

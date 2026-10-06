@@ -61,44 +61,29 @@ test('empty v1 browser database migrates on cold start and v2 data is shared acr
 
   await page.getByRole('link', { name: '投递管理' }).click();
   await expect(page.getByRole('heading', { name: '投递记录' })).toBeVisible();
-  await page.getByRole('button', { name: /新建草稿/ }).first().click();
-  const createDraftDialog = page.getByRole('dialog', { name: '新建投递草稿' });
-  await expect(createDraftDialog).toBeVisible();
-  await createDraftDialog.getByLabel('公司').fill(TEST_COMPANY);
-  await createDraftDialog.getByLabel('岗位').fill(TEST_ROLE);
-  await createDraftDialog.getByRole('button', { name: '创建空进度草稿' }).click();
-  await expect(page.getByText('已创建一条尚未记录进度的草稿。')).toBeVisible();
+  await page.getByRole('button', { name: /新增投递/ }).first().click();
+  const createDialog = page.getByRole('dialog', { name: '新增投递' });
+  await expect(createDialog).toBeVisible();
+  await createDialog.getByLabel('公司').fill(TEST_COMPANY);
+  await createDialog.getByLabel('岗位').fill(TEST_ROLE);
+  await createDialog.getByLabel('当前状态').selectOption('draft');
+  await createDialog.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByText(`已添加「${TEST_COMPANY} · ${TEST_ROLE}」`)).toBeVisible();
   const applicationRow = page.getByRole('row', { name: new RegExp(`${TEST_COMPANY}.*${TEST_ROLE}`) });
   await expect(applicationRow).toContainText('待投递');
   await expect(applicationRow).toContainText('空进度');
 
   await page.getByRole('link', { name: '进度看板' }).click();
-  await expect(page.getByText(TEST_COMPANY)).toBeVisible();
-  await expect(page.getByRole('button', { name: new RegExp(`修改${TEST_COMPANY}的状态，当前待投递`) })).toBeVisible();
-  const progressScroller = page.getByRole('region', { name: '可横向滚动的进度表' });
-  const urlHeader = page.getByRole('columnheader', { name: /投递网址/ });
-  const urlCell = page.locator('tbody .progress-table__url').first();
-  await urlCell.evaluate(element => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-  await expect(urlCell).toHaveClass(/progress-table__cell--selected/);
-  await page.getByRole('heading', { name: '每一段经历，都有迹可循。' }).click();
-  await expect(urlCell).not.toHaveClass(/progress-table__cell--selected/);
-  await urlCell.evaluate(element => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-  await expect(urlCell).toHaveClass(/progress-table__cell--selected/);
-  await progressScroller.evaluate(element => { element.scrollLeft = element.scrollWidth; });
-  const [urlHeaderBounds, urlCellBounds, urlCellPosition] = await Promise.all([
-    urlHeader.boundingBox(),
-    urlCell.boundingBox(),
-    urlCell.evaluate(element => getComputedStyle(element).position),
-  ]);
-  expect(urlHeaderBounds).not.toBeNull();
-  expect(urlCellBounds).not.toBeNull();
-  expect(urlCellPosition).toBe('sticky');
-  expect(Math.abs(urlCellBounds!.x - urlHeaderBounds!.x)).toBeLessThan(1);
-  const currentColumnResizer = page.getByRole('separator', { name: '调整当前状态列宽' });
-  const currentColumnWidth = Number(await currentColumnResizer.getAttribute('aria-valuenow'));
-  await currentColumnResizer.focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(currentColumnResizer).toHaveAttribute('aria-valuenow', String(currentColumnWidth + 16));
+  await expect(page.getByRole('heading', { name: '每一段经历，都有迹可循。' })).toBeVisible();
+  await expect(page.locator('.sheet__co').getByText(TEST_COMPANY)).toBeVisible();
+  await expect(page.locator('.board-stat').filter({ hasText: '总投递' })).toContainText('1');
+  const statusSelect = page.getByRole('combobox', { name: new RegExp(`修改${TEST_COMPANY}的状态，当前待投递`) });
+  await expect(statusSelect).toBeVisible();
+  await statusSelect.selectOption({ label: '筛选中' });
+  const submissionConfirm = page.getByRole('dialog', { name: '这条还没有投递记录' });
+  await submissionConfirm.getByRole('button', { name: '记录投递并更新状态' }).click();
+  await expect(page.locator('.toast').filter({ hasText: '状态已更新为「筛选中」' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: new RegExp(`修改${TEST_COMPANY}的状态，当前筛选中`) })).toHaveValue('stage:screening');
   await expect(page.getByText('已保存到此浏览器', { exact: true })).toBeVisible();
 
   await page.getByRole('link', { name: '深度分析' }).click();
@@ -112,7 +97,7 @@ test('empty v1 browser database migrates on cold start and v2 data is shared acr
   await page.reload();
   await expect(page.getByText(TEST_COMPANY)).toBeVisible();
   await page.goto('/board');
-  await expect(page.getByRole('separator', { name: '调整当前状态列宽' })).toHaveAttribute('aria-valuenow', String(currentColumnWidth + 16));
+  await expect(page.getByRole('combobox', { name: new RegExp(`修改${TEST_COMPANY}的状态`) })).toHaveValue('stage:screening');
 });
 
 test('M8 settings exports a complete v2 backup, previews it, and atomically restores it after confirmation', async ({ page }) => {
@@ -193,39 +178,57 @@ test('M8 settings exports a complete v2 backup, previews it, and atomically rest
   await expect(page.locator('.recovery-list')).not.toContainText('M8 备份招聘季 A、M8 备份招聘季 B');
 });
 
-test('M3 raw JSON import previews original statuses and replaces only the selected season after confirmation', async ({ page }) => {
+test('M3 raw JSON import syncs without deleting, and can still replace only the selected season', async ({ page }) => {
   await page.goto('/settings');
   await page.getByLabel('名称').fill('M3 原始导入招聘季');
   await page.getByRole('button', { name: '创建并设为当前' }).click();
   await expect(page.getByText('招聘季已创建并设为当前招聘季。')).toBeVisible();
 
   await page.goto('/applications');
-  await page.getByRole('button', { name: /新建草稿/ }).first().click();
-  const draftDialog = page.getByRole('dialog', { name: '新建投递草稿' });
-  await draftDialog.getByLabel('公司').fill('应被替换的旧记录');
-  await draftDialog.getByLabel('岗位').fill('测试岗位');
-  await draftDialog.getByRole('button', { name: '创建空进度草稿' }).click();
-  await expect(page.getByText('已创建一条尚未记录进度的草稿。')).toBeVisible();
+  await page.getByRole('button', { name: /新增投递/ }).first().click();
+  const createDialog = page.getByRole('dialog', { name: '新增投递' });
+  await createDialog.getByLabel('公司').fill('应被替换的旧记录');
+  await createDialog.getByLabel('岗位').fill('测试岗位');
+  await createDialog.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByText('已添加「应被替换的旧记录 · 测试岗位」')).toBeVisible();
 
   const rows = [
     { id: 'raw-screening', company: '导入筛选公司', position: '后端工程师', location: '上海', channel: '官网', link: 'https://jobs.example.com/a', applyDate: '2026-09-01', status: '筛选中', createdAt: '2026-09-01T09:00:00+08:00', updatedAt: '2026-09-04T10:00:00+08:00', statusUpdatedAt: '2026-09-04T10:00:00+08:00' },
     { id: 'raw-failed', company: '导入挂掉公司', position: '产品经理', location: '杭州', channel: '官网', link: 'https://jobs.example.com/b', applyDate: '2026-09-02', status: '挂掉', createdAt: '2026-09-02T09:00:00+08:00', updatedAt: '2026-09-05T10:00:00+08:00', statusUpdatedAt: '2026-09-05T10:00:00+08:00' },
     { id: 'raw-draft', company: '导入待投递公司', position: '设计师', location: '北京', channel: '官网', link: '', applyDate: '2026-09-03', status: '待投递', createdAt: '2026-09-03T09:00:00+08:00', updatedAt: '2026-09-03T09:00:00+08:00', statusUpdatedAt: '2026-09-03T09:00:00+08:00' },
   ];
-  const chooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: '从原始 JSON 导入' }).click();
-  const chooser = await chooserPromise;
-  await chooser.setFiles({ name: '秋招投递记录.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(rows)) });
-  const preview = page.getByRole('region', { name: '原始 JSON 导入预览' });
-  await expect(preview).toContainText('文件共有 3 条；有效 3 条；问题 0 条。当前招聘季有 1 条');
+  const importFile = async (records: unknown[]) => {
+    const chooserPromise = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: '导入原始 JSON' }).click();
+    const chooser = await chooserPromise;
+    await chooser.setFiles({ name: '秋招投递记录.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(records)) });
+    return page.getByRole('region', { name: '原始 JSON 导入预览' });
+  };
+  let preview = await importFile(rows);
+  await expect(preview).toContainText('文件共有 3 条。按「同步」处理：新增 3 条，更新状态 0 条');
+  await preview.getByRole('button', { name: '确认同步' }).click();
+  await page.getByRole('dialog', { name: '同步这个文件？' }).getByRole('button', { name: '确认同步' }).click();
+  await expect(page.getByText(/已同步：新增 3 条，更新 0 条状态，跳过 0 条/)).toBeVisible();
+  await expect(page.getByText('应被替换的旧记录')).toBeVisible();
+  await expect(page.getByRole('row', { name: /导入筛选公司.*后端工程师/ })).toContainText('筛选中');
+
+  const later = rows.map(row => row.id === 'raw-screening' ? { ...row, status: '挂掉', updatedAt: '2026-09-20T10:00:00+08:00', statusUpdatedAt: '2026-09-20T10:00:00+08:00' } : row);
+  preview = await importFile(later);
+  await expect(preview).toContainText('新增 0 条，更新状态 1 条');
+  await expect(preview).toContainText('导入筛选公司 · 后端工程师：筛选中 → 挂掉');
+  await preview.getByRole('button', { name: '确认同步' }).click();
+  await page.getByRole('dialog', { name: '同步这个文件？' }).getByRole('button', { name: '确认同步' }).click();
+  await expect(page.getByRole('row', { name: /导入筛选公司.*后端工程师/ })).toContainText('挂掉（环节未知）');
+
+  preview = await importFile(rows);
+  await preview.getByText('改为整体替换这个招聘季…').click();
   await expect(preview.getByText('筛选中', { exact: true })).toBeVisible();
   await expect(preview.getByText('挂掉', { exact: true })).toBeVisible();
   await expect(preview.getByText('待投递', { exact: true })).toBeVisible();
-
   await preview.getByRole('button', { name: '确认替换并导入 3 条' }).click();
   const confirm = page.getByRole('dialog', { name: '替换这个招聘季的全部记录？' });
   await confirm.getByRole('button', { name: '替换并导入' }).click();
-  await expect(page.getByText('已导入 3 条记录到「M3 原始导入招聘季」；替换前的 1 条记录已保留为恢复副本。')).toBeVisible();
+  await expect(page.getByText('已导入 3 条记录到「M3 原始导入招聘季」；替换前的 4 条记录已保留为恢复副本。')).toBeVisible();
   await expect(page.getByText('应被替换的旧记录')).toHaveCount(0);
   const screeningRow = page.getByRole('row', { name: /导入筛选公司.*后端工程师/ });
   const failedRow = page.getByRole('row', { name: /导入挂掉公司.*产品经理/ });

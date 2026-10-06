@@ -7,11 +7,11 @@ test('M3 详情页可确认删除投递，并完整管理日程的增删改、�
   await expect(page.getByText('招聘季已创建并设为当前招聘季。')).toBeVisible();
 
   await page.goto('/applications');
-  await page.getByRole('button', { name: /新建草稿/ }).first().click();
-  const create = page.getByRole('dialog', { name: '新建投递草稿' });
+  await page.getByRole('button', { name: /新增投递/ }).first().click();
+  const create = page.getByRole('dialog', { name: '新增投递' });
   await create.getByLabel('公司').fill('M3 日程公司');
   await create.getByLabel('岗位').fill('客户端工程师');
-  await create.getByRole('button', { name: '创建空进度草稿' }).click();
+  await create.getByRole('button', { name: '保存' }).click();
   const row = page.getByRole('row', { name: /M3 日程公司.*客户端工程师/ });
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: /M3 日程公司/ }).click();
@@ -55,8 +55,8 @@ test('M3 详情页可确认删除投递，并完整管理日程的增删改、�
   await expect(row).toBeVisible();
   await drawer.getByRole('button', { name: '删除投递' }).click();
   const deleteApplicationConfirm = page.getByRole('dialog', { name: '删除这条投递？' });
-  await expect(deleteApplicationConfirm).toContainText('全部进度历史、日程和旧历史副本');
+  await expect(deleteApplicationConfirm).toContainText('全部进度历史和日程');
   await deleteApplicationConfirm.getByRole('button', { name: '删除投递' }).click();
   await expect(page.getByRole('row', { name: /M3 日程公司.*客户端工程师/ })).toHaveCount(0);
-  await expect(page.getByText('投递及关联进度、日程和旧历史已删除；删除前的数据快照已保留。')).toBeVisible();
+  await expect(page.getByText('投递及其进度、日程已删除；删除前的数据已留作恢复副本')).toBeVisible();
 });

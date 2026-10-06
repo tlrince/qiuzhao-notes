@@ -1,0 +1,106 @@
+/* Sheet styled after the original offer.html table view. */
+.sheet {
+  --sheet-line: #e7e0d2;
+  --sheet-line-soft: #f0eadd;
+  --sheet-sub: #8d8371;
+  --sheet-faint: #b3a892;
+  --sheet-accent: #c2410c;
+  border: 1px solid var(--sheet-line);
+  border-radius: 14px;
+  background: #fffdf9;
+  box-shadow: 0 1px 2px rgba(80, 60, 20, .04), 0 10px 30px -18px rgba(80, 60, 20, .25);
+  overflow: hidden;
+  color: #26211a;
+}
+
+.sheet__scroll { overflow: auto; max-height: min(74vh, 820px); }
+.sheet__scroll:focus-visible { outline: 3px solid var(--color-accent); outline-offset: -3px; }
+.sheet__table { width: 100%; min-width: 1680px; border-collapse: collapse; font-size: 13px; }
+.sheet__table thead th {
+  position: sticky; top: 0; z-index: 4;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--sheet-line);
+  background: #fbf8f0;
+  color: var(--sheet-sub);
+  font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap;
+}
+.sheet__table thead th:first-child { left: 0; z-index: 5; }
+.sheet__table tbody td { padding: 11px 12px; border-bottom: 1px solid var(--sheet-line-soft); vertical-align: middle; }
+.sheet__row { transition: background .15s; }
+.sheet__row:hover, .sheet__row:hover .sheet__company { background: #fdf9f0; }
+.sheet__row--expanded, .sheet__row--expanded .sheet__company { background: #fbf6ec; }
+
+.sheet__company { position: sticky; left: 0; z-index: 2; min-width: 190px; background: #fffdf9; box-shadow: inset -1px 0 0 var(--sheet-line-soft); }
+.sheet__company-inner { display: flex; align-items: center; gap: 6px; }
+.sheet__co { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
+.sheet__star { color: #b7791f; }
+.sheet__stale { display: inline-grid; place-items: center; color: #d97706; cursor: help; }
+.sheet__expand { display: inline-grid; place-items: center; flex: none; width: 24px; height: 24px; border: 0; border-radius: 7px; background: transparent; color: var(--sheet-sub); cursor: pointer; }
+.sheet__expand svg { transform: rotate(-90deg); transition: transform .18s; }
+.sheet__expand--open svg { transform: none; }
+.sheet__expand:hover { background: #fdeee1; color: var(--sheet-accent); }
+
+.sheet__role { min-width: 220px; max-width: 320px; font-weight: 600; line-height: 1.5; }
+.sheet__tag { display: inline-block; padding: 2px 9px; border-radius: 999px; background: #f3eee2; color: #7a6a4f; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.sheet__date { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sheet__muted { color: var(--sheet-faint); }
+
+.sheet__status {
+  appearance: none; -webkit-appearance: none;
+  max-width: 180px;
+  padding: 4px 26px 4px 12px;
+  border: 1px solid transparent; border-radius: 999px;
+  background-color: var(--cbg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238d8371' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; background-size: 10px;
+  color: var(--c);
+  font: inherit; font-size: 12px; font-weight: 600;
+  text-overflow: ellipsis;
+  cursor: pointer; outline: none; transition: border-color .15s;
+}
+.sheet__status:hover, .sheet__status:focus-visible { border-color: var(--c); }
+.sheet__status:disabled { opacity: .55; cursor: progress; }
+.sheet__status option { color: #26211a; background: #fff; font-weight: 400; }
+
+.sheet__next { min-width: 150px; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; }
+.sheet__overdue { color: #b91c1c; font-weight: 600; }
+.sheet__link { min-width: 220px; max-width: 300px; font-size: 12px; }
+.sheet__link-inner { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.sheet__url { min-width: 0; overflow: hidden; padding: 0; border: 0; border-bottom: 1px dashed rgba(194, 65, 12, .45); background: none; color: var(--sheet-accent); font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.sheet__url:hover { border-bottom-style: solid; }
+.sheet__mini { display: inline-flex; align-items: center; gap: 3px; flex: none; margin-left: 4px; padding: 1px 7px; border: 1px solid var(--sheet-line); border-radius: 6px; background: #fff; color: var(--sheet-sub); font: inherit; font-size: 11px; cursor: pointer; }
+.sheet__mini:hover { border-color: var(--sheet-accent); color: var(--sheet-accent); }
+
+.sheet__notes { min-width: 260px; max-width: 380px; color: #5c5344; font-size: 12px; }
+.sheet__notes-text { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: pre-wrap; word-break: break-word; }
+.sheet__editable { display: block; width: 100%; min-height: 24px; padding: 2px 4px; margin: -2px -4px; border: 1px dashed transparent; border-radius: 6px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: text; }
+.sheet__editable:hover, .sheet__editable:focus-visible { border-color: var(--sheet-line); background: #fff; }
+.sheet__editor { display: grid; gap: 4px; }
+.sheet__editor input, .sheet__editor textarea { width: 100%; padding: 5px 8px; border: 1px solid var(--color-accent); border-radius: 8px; background: #fff; color: inherit; font: inherit; line-height: 1.5; }
+.sheet__editor-note { color: var(--sheet-faint); font-size: 11px; }
+.sheet__editor-error { color: #b91c1c; font-size: 11px; }
+
+.sheet__time { min-width: 96px; color: var(--sheet-sub); font-size: 11.5px; white-space: nowrap; }
+.sheet__ops { white-space: nowrap; }
+.sheet__icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--sheet-sub); cursor: pointer; }
+.sheet__icon:hover { background: #fdeee1; color: var(--sheet-accent); }
+.sheet__icon--danger:hover { background: #fee2e2; color: #dc2626; }
+
+.sheet__detail-row > td { padding: 0 !important; border-bottom: 1px solid var(--sheet-line-soft); background: #fbf7ee; }
+/* The detail stays in the visible part of the horizontally scrolled sheet. */
+.sheet__detail { position: sticky; left: 0; display: grid; gap: 12px; box-sizing: border-box; width: min(1120px, max(320px, calc(100vw - 300px))); padding: 14px 18px 16px 52px; }
+.sheet__stages { display: flex; flex-wrap: wrap; gap: 8px; }
+.sheet__stage { display: inline-flex; gap: 6px; align-items: baseline; padding: 4px 10px; border: 1px solid var(--sheet-line); border-radius: 999px; background: #fff; color: #5c5344; font-size: 12px; }
+.sheet__stage b { color: #26211a; font-weight: 600; }
+.sheet__stage--failed { border-color: #fecaca; background: #fef2f2; }
+.sheet__detail-links { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; color: var(--sheet-sub); font-size: 12px; }
+.sheet__detail .progress-history { background: transparent; }
+
+.sheet__empty { padding: 44px 20px !important; color: var(--sheet-sub); text-align: center; }
+.sheet__sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+
+@media (max-width: 767px) {
+  .sheet { border-radius: 10px; }
+  .sheet__company { min-width: 150px; }
+  .sheet__detail { padding-left: 16px; }
+}

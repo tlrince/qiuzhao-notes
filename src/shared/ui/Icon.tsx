@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-export type IconName = 'grid' | 'file' | 'board' | 'chart' | 'settings' | 'arrow' | 'plus' | 'chevron' | 'calendar' | 'check' | 'clock' | 'alert' | 'menu' | 'leaf' | 'target' | 'folder' | 'shield' | 'search' | 'download';
+export type IconName = 'grid' | 'file' | 'board' | 'chart' | 'settings' | 'arrow' | 'plus' | 'chevron' | 'calendar' | 'check' | 'clock' | 'alert' | 'menu' | 'leaf' | 'target' | 'folder' | 'shield' | 'search' | 'download' | 'copy' | 'edit' | 'trash' | 'building' | 'activity' | 'award' | 'x-circle' | 'trend';
 const paths: Record<IconName, string[]> = {
   grid: ['M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'],
   file: ['M14 3H5v18h14V8z', 'M14 3v5h5M8 12h8M8 16h5'],
@@ -16,6 +16,14 @@ const paths: Record<IconName, string[]> = {
   shield: ['m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6z', 'm8 12 3 3 5-6'],
   search: ['M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14M15 15l6 6'],
   download: ['M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5'],
+  copy: ['M9 9h12v12H9z', 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'],
+  edit: ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'],
+  trash: ['M3 6h18', 'M8 6V4h8v2', 'M19 6v14H5V6', 'M10 11v6M14 11v6'],
+  building: ['M3 21h18M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16', 'M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1'],
+  activity: ['M22 12h-4l-3 9L9 3l-3 9H2'],
+  award: ['M12 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12', 'M15.5 13 17 22l-5-3-5 3 1.5-9'],
+  'x-circle': ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18', 'M15 9l-6 6M9 9l6 6'],
+  trend: ['M23 6l-9.5 9.5-5-5L1 18', 'M17 6h6v6'],
 };
 export function Icon({ name, size = 20, style }: { name: IconName; size?: number; style?: CSSProperties }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" style={style}>{paths[name].map((d, i) => <path d={d} key={i} />)}</svg>;
