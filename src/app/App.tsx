@@ -7,6 +7,7 @@ import { AppShell } from './AppShell.js';
 import { Button, ChartCard, EmptyState, MetricCard, PageHeader, SaveIndicator, StageBadge, type SaveStatus } from '../shared/ui/components.js';
 import { Icon } from '../shared/ui/Icon.js';
 import { ConfirmDialog, Drawer } from '../shared/ui/Dialog.js';
+import { ErrorBoundary } from '../shared/ui/ErrorBoundary.js';
 import { usePlatform, useUnsavedChanges } from './PlatformContext.js';
 import { ApplicationsV2Page } from '../features/applications/ApplicationsV2Page.js';
 import { AnalysisV2Page } from '../features/analytics/AnalysisV2Page.js';
@@ -44,14 +45,17 @@ function Overview() {
   const seasonApplications = season ? snapshot.applications.filter(item => item.seasonId === season.id) : [];
   const applicationIds = new Set(seasonApplications.map(item => item.id));
   const now = Date.now();
-  const schedules = snapshot.schedules.filter(item => applicationIds.has(item.applicationId) && item.status === 'pending' && Date.parse(item.startsAt) >= now).sort((a, b) => a.startsAt.localeCompare(b.startsAt)).slice(0, 5);
+  const pending = snapshot.schedules.filter(item => applicationIds.has(item.applicationId) && item.status === 'pending').sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  // Overdue items still need a follow-up, so they stay visible ahead of upcoming ones.
+  const overdue = pending.filter(item => Date.parse(item.startsAt) < now).slice(-5);
+  const schedules = [...overdue, ...pending.filter(item => Date.parse(item.startsAt) >= now).slice(0, 5)];
   const recent = [...seasonApplications].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5);
   const companyByApplication = new Map(seasonApplications.map(item => [item.id, item.company]));
   return <ScaffoldPage eyebrow="A LITTLE PROGRESS, EVERY DAY" title="每一步，都算数。" description="看看近期安排与最新进展，决定接下来的一步。">
     <div className="welcome-strip"><div className="welcome-art"><Icon name="leaf" size={46} /></div><div><span className="eyebrow">YOUR NEXT CHAPTER</span><h2>{season ? `${season.name}，继续向前。` : '给新的可能，留一个位置。'}</h2><p>{season ? '你的投递和进展已保存于当前工作空间。' : '先创建招聘季，再逐条记录心仪的岗位与投递进度。'}</p></div></div>
     <div className="metrics-grid"><MetricCard label="累计投递" value={String(analytics?.submittedCount ?? 0)} note={season?.name ?? '尚未选择招聘季'} icon="file" /><MetricCard label="流程进行中" value={String(analytics?.activeCount ?? 0)} note="仍在等待下一步进展" icon="clock" /><MetricCard label="推进至面试" value={String(analytics?.humanInterviewCount ?? 0)} note="按真实面试触达统计" icon="board" /><MetricCard label="累计获得 Offer" value={String(analytics?.offerCount ?? 0)} note="包含后续已拒绝的 Offer" icon="leaf" accent /></div>
     <div className="two-column">
-      <ChartCard title="近期日程" subtitle="按开始时间显示待处理安排">{schedules.length ? <ul className="overview-list">{schedules.map(item => <li key={item.id}><div><strong>{item.title}</strong><span>{companyByApplication.get(item.applicationId) ?? '未知公司'}</span></div><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })}</time></li>)}</ul> : <EmptyState icon="calendar" title="近期没有待处理日程" description={season ? '为笔试、面试或跟进安排时间。' : '创建招聘季后，这里会汇总近期日程。'} action={!season ? <SetupLink /> : undefined} />}</ChartCard>
+      <ChartCard title="近期日程" subtitle="已逾期的待办排在前面，其次是即将开始的安排">{schedules.length ? <ul className="overview-list">{schedules.map(item => <li key={item.id}><div><strong>{item.title}</strong><span>{companyByApplication.get(item.applicationId) ?? '未知公司'}</span></div><time dateTime={item.startsAt}>{overdue.includes(item) && <span className="overview-overdue">已逾期 · </span>}{new Date(item.startsAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })}</time></li>)}</ul> : <EmptyState icon="calendar" title="近期没有待处理日程" description={season ? '为笔试、面试或跟进安排时间。' : '创建招聘季后，这里会汇总近期日程。'} action={!season ? <SetupLink /> : undefined} />}</ChartCard>
       <ChartCard title="最近投递" subtitle="按最近一次修改排列">{recent.length ? <ul className="overview-list">{recent.map(item => <li key={item.id}><div><strong>{item.company}</strong><span>{item.role}</span></div><time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleDateString('zh-CN')}</time></li>)}</ul> : <EmptyState icon="file" title="当前招聘季还没有记录" description="从投递管理添加第一条机会。" action={<Link className="button button--secondary" to="/applications">前往投递管理<Icon name="arrow" size={16} /></Link>} />}</ChartCard>
     </div>
   </ScaffoldPage>;
@@ -75,6 +79,7 @@ function Settings() {
   const [confirmRecoveryRestore, setConfirmRecoveryRestore] = useState(false);
   const [recoveryToDelete, setRecoveryToDelete] = useState<RecoverySnapshotInfo | null>(null);
   const [confirmRecoveryDelete, setConfirmRecoveryDelete] = useState(false);
+  const [seasonToArchive, setSeasonToArchive] = useState<Season | null>(null);
   const recoverySnapshotBytes = recoverySnapshots.reduce((total, item) => total + item.estimatedJsonBytes, 0);
   const activeSeason = snapshot.seasons.find(season => season.id === snapshot.workspace.activeSeasonId);
   useEffect(() => {
@@ -101,7 +106,7 @@ function Settings() {
     finally { setBusy(false); }
   };
   const archive = async (season: Season) => {
-    if (!window.confirm(`归档「${season.name}」？已保存的记录会保留，归档后不能继续新建投递。`)) return;
+    setSeasonToArchive(null);
     setBusy(true); setMessage('');
     try { await runWorkspaceCommand((commands, expectedRevision) => commands.archiveSeason({ expectedRevision, seasonId: season.id })); setMessage('招聘季已归档。'); }
     catch (cause) { setMessage(cause instanceof Error ? cause.message : '归档招聘季失败。'); }
@@ -173,7 +178,7 @@ function Settings() {
     {message && <p className="quiet-note" role="status">{message}</p>}
     <div className="two-column settings-grid">
       <ChartCard title="我的招聘季" subtitle="名称、日期范围与投递目标">
-        {snapshot.seasons.filter(season => season.archivedAt === null).length ? <ul className="overview-list">{snapshot.seasons.filter(season => season.archivedAt === null).map(season => <li key={season.id}><div><strong>{season.name}{season.id === activeSeason?.id ? ' · 当前' : ''}</strong><span>{season.startDate} 至 {season.endDate} · 目标 {season.targetCount} 份</span></div><div className="page-actions"><Button type="button" variant="secondary" disabled={busy || season.id === activeSeason?.id} onClick={() => void setActive(season.id)}>设为当前</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => void archive(season)}>归档</Button></div></li>)}</ul> : <EmptyState icon="leaf" title="还没有招聘季" description="创建一个招聘季后，就可以开始记录投递。" />}
+        {snapshot.seasons.filter(season => season.archivedAt === null).length ? <ul className="overview-list">{snapshot.seasons.filter(season => season.archivedAt === null).map(season => <li key={season.id}><div><strong>{season.name}{season.id === activeSeason?.id ? ' · 当前' : ''}</strong><span>{season.startDate} 至 {season.endDate} · 目标 {season.targetCount} 份</span></div><div className="page-actions"><Button type="button" variant="secondary" disabled={busy || season.id === activeSeason?.id} onClick={() => void setActive(season.id)}>设为当前</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => setSeasonToArchive(season)}>归档</Button></div></li>)}</ul> : <EmptyState icon="leaf" title="还没有招聘季" description="创建一个招聘季后，就可以开始记录投递。" />}
         <form className="application-form settings-season-form" onSubmit={createSeason}>
           <h3>新建招聘季</h3>
           <label>名称<input required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></label>
@@ -219,6 +224,7 @@ function Settings() {
       </ChartCard>
     </div>
     <div className="page-actions"><Link className="button button--secondary" to="/settings/definitions">管理状态与环节<Icon name="arrow" size={16} /></Link></div>
+    <ConfirmDialog open={!!seasonToArchive} onCancel={() => setSeasonToArchive(null)} onConfirm={() => { if (seasonToArchive) void archive(seasonToArchive); }} title={`归档「${seasonToArchive?.name ?? ''}」？`} description="已保存的记录会保留，归档后不能继续在这个招聘季新建投递。" confirmLabel="归档" cancelLabel="取消" />
     <ConfirmDialog open={confirmRestore} onCancel={() => setConfirmRestore(false)} onConfirm={() => void restoreBackup()} title="整体替换当前工作空间？" description={`将用「${restorePreview?.workspaceName ?? '未知工作空间'}」中的 ${restorePreview?.seasonNames.join('、') || `${restorePreview?.seasonCount ?? 0} 个招聘季`} 替换目前 ${snapshot.seasons.length} 个招聘季和 ${snapshot.applications.length} 条投递。备份内包含 ${restorePreview?.applicationCount ?? 0} 条投递、${restorePreview?.progressEventCount ?? 0} 条进度记录和 ${restorePreview?.scheduleCount ?? 0} 个日程；当前数据会由存储层保留为恢复副本。`} confirmLabel="整体恢复" cancelLabel="返回检查" />
     <ConfirmDialog open={confirmRecoveryRestore} onCancel={() => setConfirmRecoveryRestore(false)} onConfirm={() => void restoreSavedCopy()} title="用这个恢复副本替换当前数据？" description={recoveryToRestore ? `将恢复「${recoveryToRestore.seasonNames.join('、') || recoveryToRestore.workspaceName}」v${recoveryToRestore.sourceSchemaVersion}（修订 ${recoveryToRestore.sourceRevision}），包含 ${recoveryToRestore.seasonCount} 个招聘季和 ${recoveryToRestore.applicationCount} 条投递。当前快照会在同一事务中另存为一个新副本。` : ''} confirmLabel="恢复此副本" cancelLabel="返回检查" />
     <ConfirmDialog open={confirmRecoveryDelete} onCancel={() => { setConfirmRecoveryDelete(false); setRecoveryToDelete(null); }} onConfirm={() => void deleteSavedCopy()} title="永久删除这份恢复副本？" description={recoveryToDelete ? `将只删除「${recoveryToDelete.seasonNames.join('、') || recoveryToDelete.workspaceName}」v${recoveryToDelete.sourceSchemaVersion}（恢复副本 ID：${recoveryToDelete.id}；来源修订 ${recoveryToDelete.sourceRevision}），包含 ${recoveryToDelete.seasonCount} 个招聘季和 ${recoveryToDelete.applicationCount} 条投递。删除后无法从本机恢复；当前数据和其他恢复副本不受影响。` : ''} confirmLabel="永久删除此副本" cancelLabel="保留此副本" />
@@ -256,19 +262,34 @@ function DesignSystem({ onPreviewChange, preview }: { onPreviewChange: (value: b
   </ScaffoldPage>;
 }
 function DefaultRoute() { const { search } = useLocation(); return <Navigate to={`/analytics${search}`} replace />; }
+function PageError({ error, reset }: { error: Error; reset: () => void }) {
+  return <ScaffoldPage eyebrow="SOMETHING WENT WRONG" title="这个页面出了点问题。" description="页面显示失败，但已保存的数据没有被修改。可以重试，或先去导出一份备份。">
+    <p className="platform-error" role="alert">错误信息：{error.message}</p>
+    <div className="page-actions"><Button onClick={reset}>重试</Button><Button variant="secondary" onClick={() => window.location.reload()}>重新加载</Button><Link className="button button--secondary" to="/settings">前往数据与设置</Link></div>
+  </ScaffoldPage>;
+}
+function seasonSubmittedCount(snapshot: ReturnType<typeof useV2Data>['snapshot'], seasonId: string): number {
+  try {
+    return calculateV2Analytics(snapshot, { seasonId }, { now: new Date().toISOString(), timeZone: snapshot.workspace.timeZone }).submittedCount;
+  } catch (cause) {
+    console.error('投递目标统计失败', cause);
+    return 0;
+  }
+}
 export function App() {
-  const { snapshot, saveStatus, runWorkspaceCommand } = useV2Data();
+  const { snapshot, saveStatus, lastError, dismissError, runWorkspaceCommand } = useV2Data();
   const navigate = useNavigate();
+  const location = useLocation();
   const [preview, setPreview] = useState(false);
   const [workspaceError, setWorkspaceError] = useState('');
   const configuredActiveSeason = snapshot.seasons.find(season => season.id === snapshot.workspace.activeSeasonId && season.archivedAt === null);
   const activeSeasonId = configuredActiveSeason?.id ?? null;
   const activeSeason = snapshot.seasons.find(season => season.id === activeSeasonId && season.archivedAt === null);
-  const submittedCount = activeSeason ? calculateV2Analytics(snapshot, { seasonId: activeSeason.id }, { now: new Date().toISOString(), timeZone: snapshot.workspace.timeZone }).submittedCount : 0;
+  const submittedCount = activeSeason ? seasonSubmittedCount(snapshot, activeSeason.id) : 0;
   const onSeasonChange = (seasonId: string) => {
     setWorkspaceError('');
     void runWorkspaceCommand((commands, expectedRevision) => commands.setActiveSeason({ expectedRevision, seasonId })).catch(cause => setWorkspaceError(cause instanceof Error ? cause.message : '切换招聘季失败'));
   };
   const workspace = { ...snapshot.workspace, activeSeasonId };
-  return <AppShell workspace={workspace} seasons={snapshot.seasons.filter(season => season.archivedAt === null)} submittedCount={submittedCount} saveStatus={saveStatus as SaveStatus} onSeasonChange={onSeasonChange}>{workspaceError && <p className="platform-error" role="alert">{workspaceError}</p>}<Routes><Route path="/" element={<DefaultRoute />} /><Route path="/analytics" element={<AnalysisV2Page seasonId={activeSeasonId} onSeasonChange={seasonId => { if (seasonId) onSeasonChange(seasonId); }} onAddApplication={() => navigate('/applications')} />} /><Route path="/overview" element={<Overview />} /><Route path="/applications" element={<ApplicationsV2Page seasonId={activeSeasonId} />} /><Route path="/board" element={<ProgressBoardV2Page seasonId={activeSeasonId} />} /><Route path="/settings" element={<Settings />} /><Route path="/settings/definitions" element={<DefinitionSettings />} /><Route path="/design-system" element={<DesignSystem preview={preview} onPreviewChange={setPreview} />} /><Route path="*" element={<ScaffoldPage eyebrow="FIND YOUR WAY" title="这一页，还没有留下记录。" description="页面可能不存在，回到熟悉的工作空间继续吧。"><Link className="button button--primary" to="/analytics">返回深度分析<Icon name="arrow" size={16} /></Link></ScaffoldPage>} /></Routes></AppShell>;
+  return <AppShell workspace={workspace} seasons={snapshot.seasons.filter(season => season.archivedAt === null)} submittedCount={submittedCount} saveStatus={saveStatus as SaveStatus} saveError={lastError} onDismissSaveError={dismissError} onSeasonChange={onSeasonChange}>{workspaceError && <p className="platform-error" role="alert">{workspaceError}</p>}<ErrorBoundary resetKey={location.pathname} fallback={(error, reset) => <PageError error={error} reset={reset} />}><Routes><Route path="/" element={<DefaultRoute />} /><Route path="/analytics" element={<AnalysisV2Page seasonId={activeSeasonId} onSeasonChange={seasonId => { if (seasonId) onSeasonChange(seasonId); }} onAddApplication={() => navigate('/applications')} />} /><Route path="/overview" element={<Overview />} /><Route path="/applications" element={<ApplicationsV2Page seasonId={activeSeasonId} />} /><Route path="/board" element={<ProgressBoardV2Page seasonId={activeSeasonId} />} /><Route path="/settings" element={<Settings />} /><Route path="/settings/definitions" element={<DefinitionSettings />} /><Route path="/design-system" element={<DesignSystem preview={preview} onPreviewChange={setPreview} />} /><Route path="*" element={<ScaffoldPage eyebrow="FIND YOUR WAY" title="这一页，还没有留下记录。" description="页面可能不存在，回到熟悉的工作空间继续吧。"><Link className="button button--primary" to="/analytics">返回深度分析<Icon name="arrow" size={16} /></Link></ScaffoldPage>} /></Routes></ErrorBoundary></AppShell>;
 }

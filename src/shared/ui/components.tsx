@@ -23,6 +23,6 @@ export function EmptyState({ title, description, icon = 'folder', action, compac
 }
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 const statuses: Record<SaveStatus, { label: string; icon: IconName }> = { idle: { label: '尚未保存', icon: 'shield' }, saving: { label: '保存中', icon: 'clock' }, saved: { label: '已保存到本机', icon: 'check' }, error: { label: '保存失败', icon: 'alert' } };
-export function SaveIndicator({ status, onRetry, storageLabel = '此浏览器' }: { status: SaveStatus; onRetry?: () => void; storageLabel?: string }) {
-  return <div className={`save-indicator save-indicator--${status}`} role="status" aria-live="polite"><Icon name={statuses[status].icon} size={15} /><span>{status === 'saved' ? `已保存到${storageLabel}` : statuses[status].label}</span>{status === 'error' && onRetry && <button onClick={onRetry} type="button">重试</button>}</div>;
+export function SaveIndicator({ status, onRetry, onDismiss, detail, storageLabel = '此浏览器' }: { status: SaveStatus; onRetry?: () => void; onDismiss?: () => void; detail?: string | null; storageLabel?: string }) {
+  return <div className={`save-indicator save-indicator--${status}`} role="status" aria-live="polite" title={status === 'error' && detail ? detail : undefined}><Icon name={statuses[status].icon} size={15} /><span>{status === 'saved' ? `已保存到${storageLabel}` : statuses[status].label}</span>{status === 'error' && onRetry && <button onClick={onRetry} type="button">重试</button>}{status === 'error' && onDismiss && <button onClick={onDismiss} type="button">知道了</button>}</div>;
 }

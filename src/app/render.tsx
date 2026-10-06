@@ -6,7 +6,12 @@ import { App } from './App.js';
 import { PlatformProvider } from './PlatformContext.js';
 import { PlatformLifecycle } from './PlatformLifecycle.js';
 import { V2DataProvider } from './V2DataContext.js';
+import { ErrorBoundary } from '../shared/ui/ErrorBoundary.js';
 import type { SnapshotStoreV2 } from '../repositories/storage-v2-contract.js';
+
+function AppCrash({ error }: { error: Error }) {
+  return <div className="platform-error" role="alert">应用显示失败：{error.message}。已保存的数据没有被修改。<button type="button" onClick={() => window.location.reload()}>重新加载</button></div>;
+}
 
 export function renderApp(platform: PlatformServices) {
   const Router = platform.kind === 'macos' ? HashRouter : BrowserRouter;
@@ -17,7 +22,7 @@ export function renderApp(platform: PlatformServices) {
     // Complete and validate v1 → v2 migration before mounting any business route.
     const initial = await store.read();
     ReactDOM.createRoot(document.getElementById('root')!).render(
-      <React.StrictMode><PlatformProvider platform={platform}><V2DataProvider store={store} initial={initial}><Router><PlatformLifecycle /><App /></Router></V2DataProvider></PlatformProvider></React.StrictMode>,
+      <React.StrictMode><ErrorBoundary fallback={error => <AppCrash error={error} />}><PlatformProvider platform={platform}><V2DataProvider store={store} initial={initial}><Router><PlatformLifecycle /><App /></Router></V2DataProvider></PlatformProvider></ErrorBoundary></React.StrictMode>,
     );
   }).catch(error => {
     const root = document.getElementById('root')!;

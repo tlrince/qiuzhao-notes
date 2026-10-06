@@ -103,9 +103,9 @@ test('抽屉限制焦点、保护未保存输入并在关闭后恢复焦点', as
   await expect(trigger).toBeFocused();
 });
 
-test('保存状态可读且真实外壳不宣称已持久化', async ({ page }) => {
+test('保存状态可读，网页版说明数据在此浏览器而不冒称本机', async ({ page }) => {
   await page.goto('/analytics');
-  await expect(page.getByText('尚未保存', { exact: true }).first()).toBeVisible();
+  await expect(page.locator('.topbar').getByText('已保存到此浏览器', { exact: true })).toBeVisible();
   await expect(page.getByText('已保存到本机', { exact: true })).toHaveCount(0);
   await page.goto('/design-system');
   const selector = page.getByLabel('保存状态预览', { exact: true });

@@ -93,6 +93,7 @@ progress::-webkit-progress-bar { background: var(--color-border); } progress::-w
 .overview-list li > div:first-child { display: grid; gap: 5px; min-width: 0; }
 .overview-list strong { color: var(--color-ink); font-size: 12px; font-weight: 550; }
 .overview-list time { white-space: nowrap; font-size: 10px; }
+.overview-overdue { color: #a13628; font-weight: 600; }
 .overview-list .page-actions { padding: 0; align-items: center; }
 .recovery-capacity { display: grid; gap: 5px; padding: 14px 24px 4px; color: var(--color-muted); font-size: 11px; }
 .recovery-capacity strong { color: var(--color-ink); font-size: 12px; font-weight: 550; }

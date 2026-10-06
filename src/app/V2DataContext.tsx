@@ -35,6 +35,8 @@ export interface V2DataContextValue {
   runImportCommand<T>(action: (commands: ImportCommands, revision: number) => Promise<T>): Promise<T>;
   runScheduleCommand<T>(action: (commands: ScheduleCommands, revision: number) => Promise<T>): Promise<T>;
   recordBackupAt(at: string): Promise<void>;
+  /** Clears a failed-save notice; the failed command committed nothing, so stored data is unchanged. */
+  dismissError(): void;
 }
 
 const V2DataContext = createContext<V2DataContextValue | null>(null);
@@ -55,7 +57,8 @@ export function V2DataProvider({
   channelName?: string;
 }) {
   const [stored, setStored] = useState(initial);
-  const [saveStatus, setSaveStatus] = useState<V2SaveStatus>('idle');
+  // The initial snapshot was just read from durable storage, so it is already saved.
+  const [saveStatus, setSaveStatus] = useState<V2SaveStatus>('saved');
   const [lastError, setLastError] = useState<string | null>(null);
   const refreshGeneration = useRef(0);
   const commands = useMemo(() => createApplicationCommands(store), [store]);
@@ -199,6 +202,11 @@ export function V2DataProvider({
     }
   }, [refresh, store]);
 
+  const dismissError = useCallback(() => {
+    setLastError(null);
+    setSaveStatus(current => current === 'error' ? 'saved' : current);
+  }, []);
+
   useEffect(() => {
     let channel: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
@@ -241,7 +249,8 @@ export function V2DataProvider({
     runImportCommand,
     runScheduleCommand,
     recordBackupAt,
-  }), [stored, saveStatus, lastError, commands, workspaceCommands, definitionCommands, backupCommands, importCommands, scheduleCommands, refresh, runCommand, runWorkspaceCommand, runDefinitionCommand, runBackupCommand, runImportCommand, runScheduleCommand, recordBackupAt]);
+    dismissError,
+  }), [stored, saveStatus, lastError, commands, workspaceCommands, definitionCommands, backupCommands, importCommands, scheduleCommands, refresh, runCommand, runWorkspaceCommand, runDefinitionCommand, runBackupCommand, runImportCommand, runScheduleCommand, recordBackupAt, dismissError]);
 
   return <V2DataContext.Provider value={value}>{children}</V2DataContext.Provider>;
 }

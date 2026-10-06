@@ -19,6 +19,7 @@ import {
   type StageDefinitionDraft,
   type StatusDefinitionDraft,
 } from './definition-manager-model.js';
+import { ConfirmDialog } from '../../shared/ui/Dialog.js';
 import './DefinitionManager.css';
 
 export interface DefinitionManagerCommands {
@@ -65,6 +66,7 @@ export function DefinitionManager({ definitions, onCommand }: DefinitionManagerP
   const [statusMessage, setStatusMessage] = useState('');
   const [statusError, setStatusError] = useState('');
   const [statusSaving, setStatusSaving] = useState(false);
+  const [pendingArchive, setPendingArchive] = useState<{ kind: 'stage'; stage: StageDefinition } | { kind: 'status'; status: StatusDefinition } | null>(null);
 
   const editStage = (stage: StageDefinition) => {
     setEditingStageId(stage.id);
@@ -159,9 +161,7 @@ export function DefinitionManager({ definitions, onCommand }: DefinitionManagerP
   };
 
   const archiveStage = async (stage: StageDefinition) => {
-    const linkedCount = statuses.filter(status => status.stageId === stage.id && status.archivedAt === null).length;
-    const detail = linkedCount ? `同时会归档关联的 ${linkedCount} 个可用状态。` : '';
-    if (!window.confirm(`归档「${stage.name}」？${detail}历史记录仍会保留。`)) return;
+    setPendingArchive(null);
     setStageError('');
     setStageMessage('');
     try {
@@ -175,7 +175,7 @@ export function DefinitionManager({ definitions, onCommand }: DefinitionManagerP
   };
 
   const archiveStatus = async (status: StatusDefinition) => {
-    if (!window.confirm(`归档「${status.name}」？现有投递和历史记录将保留。`)) return;
+    setPendingArchive(null);
     setStatusError('');
     setStatusMessage('');
     try {
@@ -250,7 +250,7 @@ export function DefinitionManager({ definitions, onCommand }: DefinitionManagerP
             {stages.map(stage => (
               <article key={stage.id} className={`definition-manager__item${stage.archivedAt ? ' is-archived' : ''}`}>
                 <div className="definition-manager__item-copy"><strong>{stage.name}</strong><span>{STAGE_CATEGORY_LABELS[stage.category]} · 顺序 {stage.sortOrder}{stage.countsAsInterview ? ' · 计入面试' : ''}{stage.interviewRound !== undefined ? ` · 第 ${stage.interviewRound} 轮` : ''}</span></div>
-                {stage.archivedAt ? <span className="definition-manager__archived">已归档</span> : <div className="definition-manager__item-actions"><button type="button" className="definition-manager__button--quiet" onClick={() => editStage(stage)}>编辑</button><button type="button" className="definition-manager__button--danger" onClick={() => void archiveStage(stage)}>归档</button></div>}
+                {stage.archivedAt ? <span className="definition-manager__archived">已归档</span> : <div className="definition-manager__item-actions"><button type="button" className="definition-manager__button--quiet" onClick={() => editStage(stage)}>编辑</button><button type="button" className="definition-manager__button--danger" onClick={() => setPendingArchive({ kind: 'stage', stage })}>归档</button></div>}
               </article>
             ))}
             {!stages.length ? <p className="definition-manager__empty">还没有环节，可以先新增一个自定义环节。</p> : null}
@@ -265,7 +265,7 @@ export function DefinitionManager({ definitions, onCommand }: DefinitionManagerP
               <article key={status.id} className={`definition-manager__item${status.archivedAt ? ' is-archived' : ''}`}>
                 <span className="definition-manager__swatch" aria-hidden="true" style={{ backgroundColor: status.color }} />
                 <div className="definition-manager__item-copy"><strong>{status.name}</strong><span>{statusLabel(status, definitions)} · 顺序 {status.sortOrder}{status.statisticsCategory ? ` · ${status.statisticsCategory}` : ''}</span></div>
-                {status.archivedAt ? <span className="definition-manager__archived">已归档</span> : <div className="definition-manager__item-actions"><button type="button" className="definition-manager__button--quiet" onClick={() => editStatus(status)}>编辑</button><button type="button" className="definition-manager__button--danger" onClick={() => void archiveStatus(status)}>归档</button></div>}
+                {status.archivedAt ? <span className="definition-manager__archived">已归档</span> : <div className="definition-manager__item-actions"><button type="button" className="definition-manager__button--quiet" onClick={() => editStatus(status)}>编辑</button><button type="button" className="definition-manager__button--danger" onClick={() => setPendingArchive({ kind: 'status', status })}>归档</button></div>}
               </article>
             ))}
             {!statuses.length ? <p className="definition-manager__empty">还没有状态，可以新建自定义且未分类的状态。</p> : null}
@@ -274,6 +274,17 @@ export function DefinitionManager({ definitions, onCommand }: DefinitionManagerP
           <p className="definition-manager__footnote">已被投递或历史记录引用的状态只可归档。此面板不提供硬删除。</p>
         </section>
       </div>
+      <ConfirmDialog
+        open={pendingArchive !== null}
+        onCancel={() => setPendingArchive(null)}
+        onConfirm={() => { if (pendingArchive?.kind === 'stage') void archiveStage(pendingArchive.stage); else if (pendingArchive) void archiveStatus(pendingArchive.status); }}
+        title={`归档「${pendingArchive?.kind === 'stage' ? pendingArchive.stage.name : pendingArchive?.status.name ?? ''}」？`}
+        description={pendingArchive?.kind === 'stage'
+          ? `${(() => { const linked = statuses.filter(status => status.stageId === pendingArchive.stage.id && status.archivedAt === null).length; return linked ? `同时会归档关联的 ${linked} 个可用状态。` : ''; })()}历史记录仍会保留。`
+          : '现有投递和历史记录将保留，归档后不能再选这个状态。'}
+        confirmLabel="归档"
+        cancelLabel="取消"
+      />
     </section>
   );
 }
