@@ -152,7 +152,7 @@ function ChannelPerformance({ result }: { result: V2AnalyticsResult }) {
   </ChartCard>;
 }
 
-const cityPalette = ['#985238', '#6c765d', '#c7b184', '#526961', '#a98470', '#8c8d78', '#b59a67', '#6b7b83'];
+const cityPalette = ['#0f766e', '#2fa594', '#d4a24c', '#5b8db8', '#8fd3c5', '#c47a5a', '#7b8c86', '#b8a77a'];
 
 function CityDistribution({ result }: { result: V2AnalyticsResult }) {
   const total = result.cities.reduce((sum, item) => sum + item.count, 0);

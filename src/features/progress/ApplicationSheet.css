@@ -4,7 +4,7 @@
   --sheet-line-soft: #f0eadd;
   --sheet-sub: #8d8371;
   --sheet-faint: #b3a892;
-  --sheet-accent: #c2410c;
+  --sheet-accent: #0f766e;
   border: 1px solid var(--sheet-line);
   border-radius: 14px;
   background: #fffdf9;
@@ -68,7 +68,7 @@
 .sheet__link-inner { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .sheet__url { min-width: 0; overflow: hidden; padding: 0; border: 0; border-bottom: 1px dashed rgba(194, 65, 12, .45); background: none; color: var(--sheet-accent); font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .sheet__url:hover { border-bottom-style: solid; }
-.sheet__mini { display: inline-flex; align-items: center; gap: 3px; flex: none; margin-left: 4px; padding: 1px 7px; border: 1px solid var(--sheet-line); border-radius: 6px; background: #fff; color: var(--sheet-sub); font: inherit; font-size: 11px; cursor: pointer; }
+.sheet__mini { display: inline-flex; align-items: center; gap: 3px; flex: none; margin-left: 4px; padding: 1px 7px; border: 1px solid var(--sheet-line); border-radius: 6px; background: #fff; color: var(--sheet-sub); font: inherit; font-size: 12px; cursor: pointer; }
 .sheet__mini:hover { border-color: var(--sheet-accent); color: var(--sheet-accent); }
 
 .sheet__notes { min-width: 260px; max-width: 380px; color: #5c5344; font-size: 12px; }
@@ -77,10 +77,10 @@
 .sheet__editable:hover, .sheet__editable:focus-visible { border-color: var(--sheet-line); background: #fff; }
 .sheet__editor { display: grid; gap: 4px; }
 .sheet__editor input, .sheet__editor textarea { width: 100%; padding: 5px 8px; border: 1px solid var(--color-accent); border-radius: 8px; background: #fff; color: inherit; font: inherit; line-height: 1.5; }
-.sheet__editor-note { color: var(--sheet-faint); font-size: 11px; }
-.sheet__editor-error { color: #b91c1c; font-size: 11px; }
+.sheet__editor-note { color: var(--sheet-faint); font-size: 12px; }
+.sheet__editor-error { color: #b91c1c; font-size: 12px; }
 
-.sheet__time { min-width: 96px; color: var(--sheet-sub); font-size: 11.5px; white-space: nowrap; }
+.sheet__time { min-width: 96px; color: var(--sheet-sub); font-size: 12px; white-space: nowrap; }
 .sheet__ops { white-space: nowrap; }
 .sheet__icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--sheet-sub); cursor: pointer; }
 .sheet__icon:hover { background: #fdeee1; color: var(--sheet-accent); }

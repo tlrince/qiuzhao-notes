@@ -82,6 +82,6 @@
 .progress-history__tech { color: var(--history-muted); font-size: 12px; }
 .progress-history__tech summary { cursor: pointer; }
 .progress-history__tech p { margin: 4px 0 0; }
-.progress-history__tech code { font-size: 11px; overflow-wrap: anywhere; }
+.progress-history__tech code { font-size: 12px; overflow-wrap: anywhere; }
 
 .progress-history__sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
