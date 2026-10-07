@@ -109,7 +109,8 @@
 .applications-v2__status-dot { width: 0.55rem; height: 0.55rem; flex: 0 0 auto; border-radius: 50%; background: #a9aa9e; }
 .applications-v2__status-dot--failed { box-shadow: 0 0 0 3px #f7e6e4; }
 .applications-v2__status-dot--offer { box-shadow: 0 0 0 3px #f7ecd6; }
-.applications-v2__status small { margin: 0 0 0 0.1rem; color: var(--applications-muted); font-size: 12px; }
+.applications-v2__status-text { display: inline-flex; align-items: baseline; gap: 6px; line-height: 1.5; }
+.applications-v2__status small { color: var(--applications-muted); font-size: 12px; }
 .applications-v2__star { border: 0; background: transparent; color: #a1a194; font-size: 1.2rem; cursor: pointer; }
 .applications-v2__star--active { color: #a47b25; }
 .applications-v2__link { border: 0; padding: 0; background: transparent; color: #0f766e; text-decoration: underline; text-underline-offset: 0.15em; cursor: pointer; white-space: nowrap; }

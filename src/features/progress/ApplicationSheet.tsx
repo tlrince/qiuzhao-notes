@@ -144,9 +144,12 @@ function SheetRow({ item, props }: { item: SheetItem; props: ApplicationSheetPro
         />
       </td>
       <td className="sheet__status-cell">
+        {/* The pill is sized by its own label; a transparent <select> on top handles the choice,
+            so long options in the list don't widen every row. */}
+        <span className={`sheet__status${busy ? ' sheet__status--busy' : ''}`} style={{ '--c': tone.color, '--cbg': tone.background } as CSSProperties}>
+        <span className="sheet__status-label" aria-hidden="true">{current.statusName}</span>
         <select
-          className="sheet__status"
-          style={{ '--c': tone.color, '--cbg': tone.background } as CSSProperties}
+          className="sheet__status-select"
           value={item.row.events.at(-1)?.statusId ?? options[0]?.key ?? ''}
           disabled={busy}
           aria-label={`修改${application.company}的状态，当前${current.statusName}`}
@@ -157,6 +160,7 @@ function SheetRow({ item, props }: { item: SheetItem; props: ApplicationSheetPro
             {group.options.map(option => <option key={option.key} value={option.key} disabled={option.disabled}>{option.label}</option>)}
           </optgroup>)}
         </select>
+        </span>
       </td>
       <td className="sheet__next">{nextSchedule
         ? <span className={overdue ? 'sheet__overdue' : undefined} title={nextSchedule.notes || nextSchedule.title}>{overdue ? '已逾期 · ' : ''}{localStamp(nextSchedule.startsAt).slice(5)} · {nextSchedule.title}</span>
