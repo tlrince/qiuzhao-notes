@@ -71,7 +71,7 @@ test('empty v1 browser database migrates on cold start and v2 data is shared acr
   await expect(page.getByText(`已添加「${TEST_COMPANY} · ${TEST_ROLE}」`)).toBeVisible();
   const applicationRow = page.getByRole('row', { name: new RegExp(`${TEST_COMPANY}.*${TEST_ROLE}`) });
   await expect(applicationRow).toContainText('待投递');
-  await expect(applicationRow).toContainText('空进度');
+  await expect(applicationRow).toContainText('未记录进度');
 
   await page.getByRole('link', { name: '进度看板' }).click();
   await expect(page.getByRole('heading', { name: '每一段经历，都有迹可循。' })).toBeVisible();
@@ -241,7 +241,7 @@ test('M3 raw JSON import syncs without deleting, and can still replace only the 
   await expect(failedRow).toContainText('挂掉（环节未知）');
   await expect(draftRow).toBeVisible();
   await expect(draftRow).toContainText('待投递');
-  await expect(draftRow).toContainText('空进度');
+  await expect(draftRow).toContainText('未记录进度');
 
   await page.reload();
   await expect(page.getByRole('row', { name: /导入筛选公司.*后端工程师/ })).toContainText('筛选中');
