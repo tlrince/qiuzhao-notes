@@ -46,7 +46,7 @@ function fromLocalDateTime(value: string): string {
   return date.toISOString();
 }
 
-function scheduleTypeName(type: Schedule['type']): string {
+export function scheduleTypeName(type: Schedule['type']): string {
   return ({ assessment: '测评', interview: '面试', follow_up: '跟进', other: '其他' })[type];
 }
 

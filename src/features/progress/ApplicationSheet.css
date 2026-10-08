@@ -26,7 +26,7 @@
 }
 .sheet__table thead th:first-child { left: 0; z-index: 5; }
 .sheet__table tbody td { padding: 11px 12px; border-bottom: 1px solid var(--sheet-line-soft); vertical-align: middle; }
-.sheet__row { transition: background .15s; }
+.sheet__row { cursor: pointer; transition: background .15s; }
 .sheet__row:hover, .sheet__row:hover .sheet__company { background: #fdf9f0; }
 .sheet__row--expanded, .sheet__row--expanded .sheet__company { background: #fbf6ec; }
 
@@ -117,4 +117,8 @@
 }
 
 .sheet__cities { min-width: 120px; max-width: 220px; }
+.sheet__editable--cities { cursor: pointer; }
+.sheet__city-editor { display: grid; gap: 4px; min-width: 190px; cursor: default; }
+.sheet__city-editor .city-tags input { width: auto; min-width: 5rem; padding: 0 4px; border: 0; }
+.sheet__city-actions { display: flex; gap: 6px; }
 .sheet__city { display: inline-block; margin: 1px 4px 1px 0; padding: 1px 8px; border: 1px solid var(--sheet-line); border-radius: 999px; background: #fff; color: #5c5344; font-size: 12px; white-space: nowrap; }

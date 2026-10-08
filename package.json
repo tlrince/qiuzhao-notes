@@ -1,6 +1,6 @@
 {
   "name": "autumn-applications",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "engines": {
@@ -25,6 +25,7 @@
     "test:m4definitions": "npm run build:domain && node --test tests/m4-definition-commands.test.mjs",
     "test:r4": "node --experimental-strip-types --test tests/r4-progress-table.test.mjs",
     "test:r5": "node --experimental-strip-types --test tests/r5-progress-history.test.mjs",
+    "test:interactions-ui": "playwright test tests/interactions.integration.spec.ts --project=chromium --config=playwright.v2.config.ts",
     "test:r5-ui": "playwright test tests/r5-v2-app.integration.spec.ts --project=chromium --config=playwright.v2.config.ts",
     "test:m5v2": "npm run build:domain && node --test tests/m5-v2-analytics.test.mjs",
     "test:m6v2": "node --experimental-strip-types --test tests/m6-v2-analysis-page.test.mjs",
