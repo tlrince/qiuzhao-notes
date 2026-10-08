@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: /(v2-app|m3-v2-lifecycle)\.integration\.spec\.ts/,
+  testMatch: /(v2-app|m3-v2-lifecycle|interactions)\.integration\.spec\.ts/,
   fullyParallel: false,
   reporter: 'list',
   outputDir: 'test-results/v2-app',

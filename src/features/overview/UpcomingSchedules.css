@@ -1,0 +1,23 @@
+.upcoming { list-style: none; margin: 0; padding: 4px 24px 20px; }
+.upcoming__item { border-bottom: 1px solid #eeece5; }
+.upcoming__item:last-child { border-bottom: 0; }
+.upcoming__row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.upcoming__main { display: grid; flex: 1; gap: 4px; min-width: 0; padding: 4px 6px; margin: -4px -6px; border: 0; border-radius: 8px; background: transparent; color: var(--color-muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.upcoming__main:hover, .upcoming__main[aria-expanded='true'] { background: #f4f1e8; }
+.upcoming__main strong { overflow: hidden; color: var(--color-ink); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.upcoming__row time { flex: none; color: var(--color-muted); font-size: 12px; white-space: nowrap; }
+.upcoming__done { flex: none; min-height: 28px; padding: 2px 12px; border: 1px solid var(--color-accent); border-radius: 999px; background: #fff; color: var(--color-accent); font-size: 12px; font-weight: 600; cursor: pointer; }
+.upcoming__done:hover:not(:disabled) { background: var(--color-accent); color: #fff; }
+.upcoming__done:disabled { opacity: .5; cursor: progress; }
+.upcoming__item--overdue .upcoming__main strong { color: #b42318; }
+.upcoming__detail { display: grid; gap: 10px; margin: 0 0 12px; padding: 12px 14px; border-radius: 10px; background: #f8f6ef; font-size: 12px; }
+.upcoming__detail dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; margin: 0; }
+.upcoming__detail dt { color: var(--color-muted); font-size: 12px; }
+.upcoming__detail dd { margin: 0; color: var(--color-ink); font-size: 13px; overflow-wrap: anywhere; }
+.upcoming__wide { grid-column: 1 / -1; white-space: pre-wrap; }
+.upcoming__link { justify-self: start; padding: 0; border: 0; background: none; color: var(--color-accent); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
+@media (max-width: 767px) {
+  .upcoming { padding-inline: 18px; }
+  .upcoming__row { flex-wrap: wrap; }
+  .upcoming__row time { order: 3; flex-basis: 100%; }
+}

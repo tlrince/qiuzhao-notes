@@ -1,6 +1,8 @@
-import { useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { joinCities, splitCities } from '../../domain/v2/cities.js';
 import type { ProgressTableColumn, ProgressTableStageCell } from '../../domain/v2/table.js';
 import type { ProgressEvent, R1DefinitionsSnapshot } from '../../domain/v2/types.js';
+import { CityTagsInput } from '../../shared/ui/CityTagsInput.js';
 import { Icon } from '../../shared/ui/Icon.js';
 import { ProgressHistory } from './ProgressHistory.js';
 import type { ProgressHistoryAction } from './ProgressHistoryEditor.js';
@@ -22,6 +24,9 @@ export interface ApplicationSheetProps {
   onStatusChange: (item: SheetItem, option: QuickStatusOption) => void;
   onSaveAppliedOn: (item: SheetItem, value: string | null) => Promise<void>;
   onSaveNotes: (item: SheetItem, value: string) => Promise<void>;
+  onSaveCity: (item: SheetItem, value: string) => Promise<void>;
+  /** Cities already in use, offered while typing. */
+  citySuggestions: readonly string[];
   onOpenUrl: (url: string) => void;
   onCopy: (text: string, label: string) => void;
   onEdit: (item: SheetItem) => void;
@@ -90,6 +95,67 @@ function EditableCell({ value, display, kind, label, onSave }: { value: string; 
   </div>;
 }
 
+/**
+ * The work-location cell: click to edit as city tags. Enter on an empty input, 保存 or clicking
+ * elsewhere saves (text still being typed counts as a tag); Esc cancels.
+ */
+function CityCell({ item, suggestions, onSave }: { item: SheetItem; suggestions: readonly string[]; onSave: (value: string) => Promise<void> }) {
+  const company = item.row.application.company;
+  const stored = joinCities(splitCities(item.row.application.city));
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const pending = useRef('');
+  const settled = useRef(false);
+  const box = useRef<HTMLDivElement>(null);
+  const editing = draft !== null;
+
+  const close = () => { settled.current = true; pending.current = ''; setDraft(null); setError(''); };
+  const finish = useCallback(async () => {
+    if (settled.current || draft === null) return;
+    settled.current = true;
+    const next = joinCities([...splitCities(draft), ...splitCities(pending.current)]);
+    if (next === stored) { pending.current = ''; setDraft(null); setError(''); return; }
+    setSaving(true); setError('');
+    try { await onSave(next); pending.current = ''; setDraft(null); }
+    catch (cause) { settled.current = false; setError(cause instanceof Error ? cause.message : '保存失败，请重试'); }
+    finally { setSaving(false); }
+  }, [draft, onSave, stored]);
+
+  // A click anywhere outside the editor saves. This runs on pointerdown, before the input loses focus,
+  // so it also works in WebKit, where clicking a button doesn't move focus to it.
+  useEffect(() => {
+    if (!editing) return;
+    const onPointerDown = (event: PointerEvent) => { if (!box.current?.contains(event.target as Node)) void finish(); };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [editing, finish]);
+
+  if (draft === null) {
+    const cities = splitCities(stored);
+    return <button type="button" className="sheet__editable sheet__editable--cities" aria-label={`编辑${company}的工作地点`} onClick={() => { settled.current = false; pending.current = ''; setError(''); setDraft(stored); }}>
+      {cities.length ? cities.map(city => <span key={city} className="sheet__city">{city}</span>) : <span className="sheet__muted">＋ 地点</span>}
+    </button>;
+  }
+  return <div className="sheet__city-editor" ref={box}>
+    <CityTagsInput
+      inlineMenu autoFocus
+      label={`${company}的工作地点`}
+      value={draft}
+      onChange={setDraft}
+      suggestions={suggestions}
+      onDraftChange={text => { pending.current = text; }}
+      onSubmit={() => void finish()}
+      onCancel={close}
+    />
+    {saving ? <span className="sheet__editor-note">保存中…</span> : error ? <span className="sheet__editor-error" role="alert">{error}</span> : <span className="sheet__editor-note">回车添加，空着回车保存 · Esc 取消</span>}
+    <div className="sheet__city-actions">
+      <button type="button" className="sheet__mini" disabled={saving} onClick={() => void finish()}>保存</button>
+      <button type="button" className="sheet__mini" disabled={saving} onClick={close}>取消</button>
+    </div>
+  </div>;
+}
+
 function stageSummary(cell: ProgressTableStageCell): string | null {
   const receipt = cell.offerReceipts.at(-1);
   if (receipt) return `${receipt.statusName} ${shortDate(receipt.receivedOn)}${receipt.decision === 'accepted' ? ' · 已接受' : receipt.decision === 'declined' ? ' · 已拒绝' : ' · 待决定'}`;
@@ -120,8 +186,17 @@ function SheetRow({ item, props }: { item: SheetItem; props: ApplicationSheetPro
     return summary ? [{ id: column.id, name: column.name, summary, failed: cell!.failureEvents.length > 0 }] : [];
   });
 
+  // The whole row toggles the flow, except where a click means something else: controls, editors, links,
+  // and dragging to select text. Keyboard users have the arrow button, which carries aria-expanded.
+  const onRowClick = (event: MouseEvent<HTMLTableRowElement>) => {
+    if ((event.target as HTMLElement).closest('button, a, input, select, textarea, label, [role="combobox"], [role="listbox"], .sheet__editor, .sheet__city-editor')) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && selection.toString().trim() && event.currentTarget.contains(selection.anchorNode)) return;
+    props.onToggleExpand(id);
+  };
+
   return <>
-    <tr className={`sheet__row${expanded ? ' sheet__row--expanded' : ''}`}>
+    <tr className={`sheet__row${expanded ? ' sheet__row--expanded' : ''}`} onClick={onRowClick}>
       <td className="sheet__company">
         <div className="sheet__company-inner">
           <button type="button" className={`sheet__expand${expanded ? ' sheet__expand--open' : ''}`} aria-expanded={expanded} aria-label={`${expanded ? '收起' : '展开'}${application.company}的进度流程`} onClick={() => props.onToggleExpand(id)}><Icon name="chevron" size={16} /></button>
@@ -166,7 +241,7 @@ function SheetRow({ item, props }: { item: SheetItem; props: ApplicationSheetPro
         ? <span className={overdue ? 'sheet__overdue' : undefined} title={nextSchedule.notes || nextSchedule.title}>{overdue ? '已逾期 · ' : ''}{localStamp(nextSchedule.startsAt).slice(5)} · {nextSchedule.title}</span>
         : stale ? <span className="sheet__stale" title={`「${current.statusName}」已经 ${item.staleDays} 天没有新进展，可以去进度页看看或主动跟进`}>{item.staleDays} 天没进展，可以跟进</span>
           : <span className="sheet__muted">—</span>}</td>
-      <td className="sheet__cities">{item.cities.length ? item.cities.map(city => <span key={city} className="sheet__city">{city}</span>) : <span className="sheet__muted">—</span>}</td>
+      <td className="sheet__cities"><CityCell item={item} suggestions={props.citySuggestions} onSave={value => props.onSaveCity(item, value)} /></td>
       <td className="sheet__link">{href
         ? <div className="sheet__link-inner"><button type="button" className="sheet__url" title={href} onClick={() => props.onOpenUrl(href)}>{shortUrl(href)}</button><button type="button" className="sheet__mini" onClick={() => props.onCopy(href, '投递链接')}><Icon name="copy" size={12} />复制</button></div>
         : link ? <span className="sheet__muted" title={link}>{link}</span> : <span className="sheet__muted">—</span>}</td>

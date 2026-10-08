@@ -17,6 +17,7 @@ import { ChannelSettings, SeasonList } from '../features/settings/WorkspaceSetti
 import { PlatformPreview } from './PlatformPreview.js';
 import { useBackupExport } from './useBackupExport.js';
 import { MenuActions } from './MenuActions.js';
+import { UpcomingSchedules } from '../features/overview/UpcomingSchedules.js';
 import { UpdateNotice, useAppUpdate } from './UpdateNotice.js';
 import { CreateApplicationDrawer } from '../features/applications/ApplicationDrawers.js';
 import { ToastRegion, useToasts } from '../shared/ui/Toast.js';
@@ -40,11 +41,15 @@ function Overview() {
   const schedules = [...overdue, ...pending.filter(item => Date.parse(item.startsAt) >= now).slice(0, 5)];
   const recent = [...seasonApplications].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5);
   const companyByApplication = new Map(seasonApplications.map(item => [item.id, item.company]));
+  const roleByApplication = new Map(seasonApplications.map(item => [item.id, item.role]));
   return <ScaffoldPage eyebrow="A LITTLE PROGRESS, EVERY DAY" title="每一步，都算数。" description="看看近期安排与最新进展，决定接下来的一步。">
     <div className="welcome-strip"><div className="welcome-art"><Icon name="leaf" size={36} /></div><div><span className="eyebrow">YOUR NEXT CHAPTER</span><h2>{season ? `${season.name}，继续向前。` : '给新的可能，留一个位置。'}</h2><p>{season ? '你的投递和进展已保存于当前工作空间。' : '先创建招聘季，再逐条记录心仪的岗位与投递进度。'}</p></div></div>
     <div className="metrics-grid"><MetricCard label="累计投递" value={String(analytics?.submittedCount ?? 0)} note={season?.name ?? '尚未选择招聘季'} icon="file" /><MetricCard label="流程进行中" value={String(analytics?.activeCount ?? 0)} note="仍在等待下一步进展" icon="clock" /><MetricCard label="推进至面试" value={String(analytics?.humanInterviewCount ?? 0)} note="按真实面试触达统计" icon="board" /><MetricCard label="累计获得 Offer" value={String(analytics?.offerCount ?? 0)} note="包含后续已拒绝的 Offer" icon="leaf" accent /></div>
     <div className="two-column">
-      <ChartCard title="近期日程" subtitle="已逾期的待办排在前面，其次是即将开始的安排">{schedules.length ? <ul className="overview-list">{schedules.map(item => <li key={item.id}><div><strong>{item.title}</strong><span>{companyByApplication.get(item.applicationId) ?? '未知公司'}</span></div><time dateTime={item.startsAt}>{overdue.includes(item) && <span className="overview-overdue">已逾期 · </span>}{new Date(item.startsAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })}</time></li>)}</ul> : <EmptyState icon="calendar" title="近期没有待处理日程" description={season ? '为笔试、面试或跟进安排时间。' : '创建招聘季后，这里会汇总近期日程。'} action={!season ? <SetupLink /> : undefined} />}</ChartCard>
+      <ChartCard title="近期日程" subtitle="已逾期的待办排在前面，其次是即将开始的安排；点开可以查看详情，直接标记完成"><UpcomingSchedules
+        items={schedules.map(item => ({ schedule: item, company: companyByApplication.get(item.applicationId) ?? '未知公司', role: roleByApplication.get(item.applicationId) ?? '', overdue: overdue.includes(item) }))}
+        emptyState={<EmptyState icon="calendar" title="近期没有待处理日程" description={season ? '为笔试、面试或跟进安排时间。' : '创建招聘季后，这里会汇总近期日程。'} action={!season ? <SetupLink /> : undefined} />}
+      /></ChartCard>
       <ChartCard title="最近投递" subtitle="按最近一次修改排列">{recent.length ? <ul className="overview-list">{recent.map(item => <li key={item.id}><div><strong>{item.company}</strong><span>{item.role}</span></div><time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleDateString('zh-CN')}</time></li>)}</ul> : <EmptyState icon="file" title="当前招聘季还没有记录" description="从投递管理添加第一条机会。" action={<Link className="button button--secondary" to="/applications">前往投递管理<Icon name="arrow" size={16} /></Link>} />}</ChartCard>
     </div>
   </ScaffoldPage>;

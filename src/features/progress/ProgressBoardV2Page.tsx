@@ -88,6 +88,7 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
   const searched = useMemo(() => items.filter(item => matchesSearchAndChannel(item, { search, channelId, outcome, city })), [items, search, channelId, outcome, city]);
   const visible = useMemo(() => sortSheetItems(filterSheetItems(items, { search, channelId, stageKey: statusKey, outcome, city }), sort), [items, search, channelId, statusKey, outcome, city, sort]);
   const cities = useMemo(() => sheetCities(items), [items]);
+  const citySuggestions = useMemo(() => cities.map(entry => entry.city), [cities]);
   const chips = useMemo(() => sheetStatusChips(searched, snapshot.definitions, statusKey), [searched, snapshot.definitions, statusKey]);
   const stats = useMemo(() => sheetStats(items), [items]);
   const usedChannels = snapshot.channels.filter(channel => channel.archivedAt === null || applications.some(application => application.channelId === channel.id));
@@ -143,6 +144,11 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
       await runCommand((commands, expectedRevision) => commands.appendProgress({ applicationId, expectedRevision, command: { commandId: globalThis.crypto.randomUUID(), statusId: submission.id, occurredOn: value, ...(first ? { mode: 'backfill' as const, beforeEventId: first.id } : {}) } }));
     }
     notice('投递日期已保存');
+  };
+
+  const saveCity = async (item: SheetItem, value: string) => {
+    await runCommand((commands, expectedRevision) => commands.updateFields({ applicationId: item.row.application.id, expectedRevision, patch: { city: value } }));
+    notice('工作地点已保存');
   };
 
   const saveNotes = async (item: SheetItem, value: string) => {
@@ -228,6 +234,8 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
         onStatusChange={changeStatus}
         onSaveAppliedOn={saveAppliedOn}
         onSaveNotes={saveNotes}
+        onSaveCity={saveCity}
+        citySuggestions={citySuggestions}
         onOpenUrl={url => void actions.openUrl(url)}
         onCopy={copy}
         onEdit={item => setDetailId(item.row.application.id)}

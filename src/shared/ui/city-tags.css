@@ -1,6 +1,13 @@
-.city-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 2.35rem; padding: 4px 6px; border: 1px solid var(--applications-border, #deded4); border-radius: 3px; background: #fffefa; }
+.city-tags { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 2.35rem; padding: 4px 6px; border: 1px solid var(--applications-border, #deded4); border-radius: 3px; background: #fffefa; }
 .city-tags:focus-within { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 .city-tags__tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 9px; border-radius: 999px; background: #efede6; color: #34382f; font-size: 13px; }
 .city-tags__tag button { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #74776e; line-height: 1; cursor: pointer; }
 .city-tags__tag button:hover { background: #ddd9cd; }
 .city-tags input { flex: 1; min-width: 8rem; min-height: 1.8rem !important; padding: 0 4px !important; border: 0 !important; background: transparent !important; outline: none; }
+
+.city-tags__menu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 10rem; max-width: 100%; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--applications-border, #deded4); border-radius: 8px; background: #fffefa; box-shadow: 0 8px 24px rgba(42, 41, 37, .14); }
+.city-tags__menu li { padding: 6px 10px; border-radius: 6px; color: #34382f; font-size: 13px; cursor: pointer; }
+.city-tags__menu li.is-active { background: #e6f2ef; color: #115e59; }
+/* Inside a scrolling table the list takes its own space instead of floating, so it is never clipped. */
+.city-tags--inline-menu { flex-wrap: wrap; }
+.city-tags--inline-menu .city-tags__menu { position: static; flex-basis: 100%; margin-top: 2px; box-shadow: none; }
