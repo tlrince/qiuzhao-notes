@@ -173,7 +173,7 @@ const CATEGORY_TONES: Readonly<Record<string, readonly [string, string]>> = {
 
 /** Status colours follow offer.html; custom stages borrow their category's colour. */
 export function quickStatusTone(key: string, definitions: R1DefinitionsSnapshot): QuickStatusTone {
-  const known = TONES[key];
+  const known = TONES[key.startsWith('failed') ? 'failed' : key];
   if (known) return { color: known[0], background: known[1] };
   const stage = key.startsWith('stage:') ? definitions.stages.find(item => item.id === key.slice('stage:'.length)) : undefined;
   const byCategory = stage ? CATEGORY_TONES[stage.category] : undefined;
@@ -185,8 +185,13 @@ export function quickStatusTone(key: string, definitions: R1DefinitionsSnapshot)
 
 /** Display label of a dropdown key, used for filter chips. */
 export function quickStatusKeyLabel(key: string, definitions: R1DefinitionsSnapshot): string {
-  const fixed: Record<string, string> = { draft: '待投递', submitted: '已投递', offer: 'Offer', offer_accepted: '已接受 Offer', offer_declined: '已拒绝 Offer', failed: '挂掉', withdrawn: '主动退出' };
+  const fixed: Record<string, string> = { draft: '待投递', submitted: '已投递', offer: 'Offer', offer_accepted: '已接受 Offer', offer_declined: '已拒绝 Offer', failed: '挂掉（环节未知）', 'failed:*': '全部已挂', withdrawn: '主动退出' };
   if (fixed[key]) return fixed[key];
+  if (key.startsWith('failed:')) {
+    const stageId = key.slice('failed:'.length);
+    const named = definitions.statuses.find(status => status.semantic === 'failed' && status.stageId === stageId);
+    return named?.name ?? `${definitions.stages.find(stage => stage.id === stageId)?.name ?? stageId}挂`;
+  }
   if (key.startsWith('stage:')) {
     const stageId = key.slice('stage:'.length);
     const named = definitions.statuses.find(status => status.stageId === stageId && (status.semantic === 'screening' || status.semantic === 'pool'));
@@ -197,8 +202,10 @@ export function quickStatusKeyLabel(key: string, definitions: R1DefinitionsSnaps
 
 /** Process order for chips: draft, submission, stages by sort order, then outcomes. */
 export function quickStatusKeyRank(key: string, definitions: R1DefinitionsSnapshot): number {
-  const fixed: Record<string, number> = { draft: 0, submitted: 1, offer: 100_000, offer_accepted: 100_001, offer_declined: 100_002, failed: 100_003, withdrawn: 100_004 };
+  // Failures come last: the roll-up, then each stage's failure in stage order, then failures of unknown stage.
+  const fixed: Record<string, number> = { draft: 0, submitted: 1, offer: 100_000, offer_accepted: 100_001, offer_declined: 100_002, withdrawn: 100_004, 'failed:*': 100_009, failed: 200_000 };
   if (fixed[key] !== undefined) return fixed[key]!;
+  if (key.startsWith('failed:')) return 100_010 + (definitions.stages.find(stage => stage.id === key.slice('failed:'.length))?.sortOrder ?? 90_000);
   if (key.startsWith('stage:')) return 10 + (definitions.stages.find(stage => stage.id === key.slice('stage:'.length))?.sortOrder ?? 90_000);
   return 100_005;
 }

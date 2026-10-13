@@ -56,7 +56,7 @@ test('search, channel and status chips filter like offer.html, with chip counts 
   assert.deepEqual(sheet.filterSheetItems(all, { search: '', channelId: 'referral', stageKey: sheet.ALL, outcome: sheet.ALL, city: sheet.ALL }).map(item => item.row.application.id), ['c']);
   assert.deepEqual(sheet.filterSheetItems(all, { search: '', channelId: sheet.ALL, stageKey: 'failed', outcome: sheet.ALL, city: sheet.ALL }).map(item => item.row.application.id), ['a']);
   const chips = sheet.sheetStatusChips(all, definitions, sheet.ALL);
-  assert.deepEqual(chips.map(chip => [chip.label, chip.count]), [['待投递', 1], ['简历筛选', 1], ['一面', 1], ['泡池子', 1], ['挂掉', 1]]);
+  assert.deepEqual(chips.map(chip => [chip.label, chip.count]), [['待投递', 1], ['简历筛选', 1], ['一面', 1], ['泡池子', 1], ['挂掉（环节未知）', 1]]);
   assert.deepEqual(sheet.sheetStatusChips(all.filter(item => item.row.application.company === '远山电子'), definitions, 'failed').map(chip => [chip.key, chip.count]), [['stage:interview_1', 1], ['failed', 0]], '选中的状态即使为 0 也保留');
 });
 
@@ -69,18 +69,40 @@ test('sorting by apply date keeps drafts last; stats count companies like offer.
   assert.equal(sheet.displayNotes('正式批\n导入字段：源记录 ID=x'), '正式批');
 });
 
-test('stage chips group every phase and result of a stage; outcome and single-city filters narrow the rows', () => {
+test('stage chips count what is still in the stage; failures get their own chips, with a roll-up', () => {
   const data = [
     application('w', '甲', '工程师', [['submitted', '2026-09-01'], ['interview_1_waiting', '2026-09-02']], { city: '北京、上海' }),
     application('x', '乙', '工程师', [['submitted', '2026-09-01'], ['interview_1_active', '2026-09-03'], ['interview_1_failed', '2026-09-05', { failedAt: { stageId: 'interview_1' } }]], { city: '上海' }),
     application('y', '丙', '工程师', [['submitted', '2026-09-01'], ['screening', '2026-09-02']], { city: '' }),
+    application('r1', '丁', '工程师', [['submitted', '2026-09-01'], ['screening_failed', '2026-09-03', { failedAt: { stageId: 'screening' } }]]),
+    application('r2', '戊', '工程师', [['submitted', '2026-09-01'], ['screening_failed', '2026-09-03', { failedAt: { stageId: 'screening' } }]]),
+    application('u', '己', '工程师', [['submitted', '2026-09-01'], ['failed_unknown', '2026-09-04', { failedAt: 'unknown' }]]),
   ];
   const projection = domain.projectProgressTable({ applications: data.map(item => item.app), progressRecords: data.map(item => item.record), definitions, now: '2026-10-06' });
   const all = sheet.buildSheetItems(projection.rows, data.map(item => item.record), channels, '2026-10-06');
   const filter = overrides => sheet.filterSheetItems(all, { search: '', channelId: sheet.ALL, stageKey: sheet.ALL, outcome: sheet.ALL, city: sheet.ALL, ...overrides }).map(item => item.row.application.id);
-  assert.deepEqual(filter({ stageKey: 'stage:interview_1' }), ['w', 'x'], '待一面和一面挂都算一面');
-  assert.deepEqual(filter({ stageKey: 'stage:interview_1', outcome: 'failed' }), ['x']);
-  assert.deepEqual(filter({ city: '上海' }), ['w', 'x']);
-  assert.deepEqual(sheet.sheetStatusChips(all, definitions, sheet.ALL).map(chip => [chip.label, chip.count]), [['简历筛选', 1], ['一面', 2]]);
-  assert.deepEqual(sheet.sheetCities(all), [{ city: '上海', count: 2 }, { city: '北京', count: 1 }]);
+  assert.deepEqual(filter({ stageKey: 'stage:interview_1' }), ['w'], '一面只数还在一面的');
+  assert.deepEqual(filter({ stageKey: 'failed:interview_1' }), ['x'], '一面挂单独成组');
+  assert.deepEqual(filter({ stageKey: 'failed:screening' }), ['r1', 'r2']);
+  assert.deepEqual(filter({ stageKey: 'failed' }), ['u'], '环节未知的挂掉');
+  assert.deepEqual(filter({ stageKey: sheet.FAILED_ALL }), ['x', 'r1', 'r2', 'u'], '全部已挂汇总所有挂掉');
+  assert.deepEqual(filter({ stageKey: sheet.FAILED_ALL, city: '北京' }), [], '和城市筛选叠加');
+  assert.deepEqual(filter({ stageKey: 'failed:interview_1', city: '上海' }), ['x']);
+  assert.deepEqual(filter({ stageKey: sheet.FAILED_ALL, outcome: 'active' }), [], '结果选「进行中」时没有挂掉的');
+  assert.deepEqual(filter({ city: '上海' }), ['w', 'x', 'r1', 'r2', 'u']);
+
+  const chips = sheet.sheetStatusChips(all, definitions, sheet.ALL);
+  assert.deepEqual(chips.map(chip => [chip.label, chip.count, chip.failed]), [
+    ['简历筛选', 1, false], ['一面', 1, false],
+    ['全部已挂', 4, true], ['简历挂', 2, true], ['一面挂', 1, true], ['挂掉（环节未知）', 1, true],
+  ]);
+  const roll = chips.find(chip => chip.key === sheet.FAILED_ALL);
+  assert.equal(chips.filter(chip => chip.key !== sheet.FAILED_ALL).reduce((sum, chip) => sum + chip.count, 0), all.length, '除汇总外的标签加起来等于总数');
+  assert.equal(roll.count, chips.filter(chip => chip.failed && chip.key !== sheet.FAILED_ALL).reduce((sum, chip) => sum + chip.count, 0));
+
+  // With only one kind of failure the roll-up would repeat it, so it is left out (unless selected).
+  const onlyOne = all.filter(item => ['w', 'x'].includes(item.row.application.id));
+  assert.deepEqual(sheet.sheetStatusChips(onlyOne, definitions, sheet.ALL).map(chip => chip.label), ['一面', '一面挂']);
+  assert.deepEqual(sheet.sheetStatusChips(onlyOne, definitions, sheet.FAILED_ALL).map(chip => [chip.label, chip.count]), [['一面', 1], ['全部已挂', 1], ['一面挂', 1]]);
+  assert.deepEqual(sheet.sheetCities(all), [{ city: '上海', count: 5 }, { city: '北京', count: 1 }]);
 });

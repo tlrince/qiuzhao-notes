@@ -13,7 +13,7 @@ export interface SheetItem {
   row: ProgressTableRow;
   record: ProgressRecord;
   statusKey: string;
-  /** Filter group: the stage the application is in or failed at (一面挂 belongs to 一面). */
+  /** Filter group: the stage the application is in, or `failed:<stage>` once it has failed (一面挂 is not 一面). */
   stageKey: string;
   outcome: SheetOutcome;
   cities: string[];
@@ -27,13 +27,20 @@ export type SheetOutcome = 'active' | 'failed' | 'offer' | 'withdrawn';
 export interface SheetFilters {
   search: string;
   channelId: string;
-  /** A stage group key from stageFilterKey, or ALL. */
+  /** A group key from stageFilterKey, FAILED_ALL, or ALL. */
   stageKey: string;
   outcome: SheetOutcome | typeof ALL;
   city: string;
 }
 
-/** Groups by stage regardless of phase or result, so 待一面、一面中、一面挂 are all 一面. */
+/** Chip key that matches every failed application, whatever stage it failed at. */
+export const FAILED_ALL = 'failed:*';
+
+/**
+ * Groups by stage regardless of phase, so 待一面、一面中、一面待结果、一面通过 are all 一面.
+ * Failures are kept apart as `failed:<stage>` (or `failed` when the stage is unknown), so a
+ * stage chip counts only what is still in that stage.
+ */
 export function stageFilterKey(record: ProgressRecord): string {
   const current = record.events.filter(event => event.invalidatedAt === null).sort((left, right) => left.sequence - right.sequence).at(-1);
   if (!current || current.semantics.semantic === 'draft') return 'draft';
@@ -42,7 +49,7 @@ export function stageFilterKey(record: ProgressRecord): string {
   if (semantic === 'offer_received' || semantic === 'offer_accepted' || semantic === 'offer_declined') return 'offer';
   if (semantic === 'failed') {
     const stageId = typeof current.failedAt === 'object' && current.failedAt !== null ? current.failedAt.stageId : current.semantics.stageId ?? current.contextStageId;
-    return stageId ? `stage:${stageId}` : 'failed';
+    return stageId ? `failed:${stageId}` : 'failed';
   }
   if (semantic === 'withdrawn') return 'withdrawn';
   return current.semantics.stageId ? `stage:${current.semantics.stageId}` : `status:${current.statusId}`;
@@ -105,8 +112,12 @@ export function matchesSearchAndChannel(item: SheetItem, filters: Pick<SheetFilt
   return [company, role, city, notes, item.channelName].join('\n').toLocaleLowerCase().includes(needle);
 }
 
+const isFailedKey = (key: string) => key === 'failed' || key.startsWith('failed:');
+
 export function filterSheetItems(items: readonly SheetItem[], filters: SheetFilters): SheetItem[] {
-  return items.filter(item => matchesSearchAndChannel(item, filters) && (filters.stageKey === ALL || item.stageKey === filters.stageKey));
+  return items.filter(item => matchesSearchAndChannel(item, filters) && (
+    filters.stageKey === ALL
+    || (filters.stageKey === FAILED_ALL ? isFailedKey(item.stageKey) : item.stageKey === filters.stageKey)));
 }
 
 export function sortSheetItems(items: readonly SheetItem[], sort: SheetSort): SheetItem[] {
@@ -121,17 +132,26 @@ export function sortSheetItems(items: readonly SheetItem[], sort: SheetSort): Sh
   return [...items].sort(compare[sort]);
 }
 
-/** Stage chips with counts over the rows that pass the other filters. */
-export function sheetStatusChips(items: readonly SheetItem[], definitions: R1DefinitionsSnapshot, selected: string): Array<{ key: string; label: string; count: number }> {
+export interface SheetChip { key: string; label: string; count: number; failed: boolean }
+
+/**
+ * Chips with counts over the rows that pass the other filters: one per stage still in progress,
+ * then one per failure (简历挂、一面挂…), preceded by a 全部已挂 roll-up when there is more than
+ * one kind of failure. The roll-up repeats the failure chips' rows, so only the others add up to the total.
+ */
+export function sheetStatusChips(items: readonly SheetItem[], definitions: R1DefinitionsSnapshot, selected: string): SheetChip[] {
   const counts = new Map<string, number>();
   for (const item of items) counts.set(item.stageKey, (counts.get(item.stageKey) ?? 0) + 1);
+  const failedKinds = [...counts.keys()].filter(isFailedKey).length;
+  const failedTotal = [...counts.entries()].filter(([key]) => isFailedKey(key)).reduce((sum, [, count]) => sum + count, 0);
+  if (failedKinds > 1 || selected === FAILED_ALL) counts.set(FAILED_ALL, failedTotal);
   if (selected !== ALL && !counts.has(selected)) counts.set(selected, 0);
   return [...counts.entries()]
     .sort(([left], [right]) => quickStatusKeyRank(left, definitions) - quickStatusKeyRank(right, definitions))
-    .map(([key, count]) => ({ key, label: stageChipLabel(key, definitions), count }));
+    .map(([key, count]) => ({ key, label: stageChipLabel(key, definitions), count, failed: isFailedKey(key) }));
 }
 
-/** Stage chips name the stage (简历筛选), since they also hold that stage's failures. */
+/** Stage chips name the stage (简历筛选); failure chips name where it failed (简历挂). */
 function stageChipLabel(key: string, definitions: R1DefinitionsSnapshot): string {
   if (!key.startsWith('stage:')) return quickStatusKeyLabel(key, definitions);
   return definitions.stages.find(stage => stage.id === key.slice('stage:'.length))?.name ?? quickStatusKeyLabel(key, definitions);

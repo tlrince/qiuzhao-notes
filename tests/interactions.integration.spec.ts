@@ -134,3 +134,37 @@ test('数据总览：近期日程可以展开查看，并一键完成和撤销',
   await page.getByRole('button', { name: '打开这条投递（改时间、取消、删除）' }).click();
   await expect(page.getByRole('dialog', { name: '日程公司' })).toBeVisible();
 });
+
+test('进度看板：挂掉的投递单独成标签，不混在环节标签里', async ({ page }) => {
+  await page.goto('/settings');
+  await page.getByLabel('名称').fill('挂掉标签招聘季');
+  await page.getByRole('button', { name: '创建并设为当前' }).click();
+  await expect(page.getByText('招聘季已创建并设为当前招聘季。')).toBeVisible();
+  for (const company of ['甲公司', '乙公司', '丙公司']) await createApplication(page, company, '工程师', []);
+
+  await page.getByRole('combobox', { name: /修改甲公司的状态/ }).selectOption({ label: '简历挂' });
+  await page.getByRole('combobox', { name: /修改乙公司的状态/ }).selectOption({ label: '一面挂' });
+  await page.getByRole('combobox', { name: /修改丙公司的状态/ }).selectOption({ label: '一面中' });
+
+  const chips = page.getByRole('navigation', { name: '按状态筛选' });
+  // The stage chip counts only what is still in the stage; each failure has its own chip.
+  await expect(chips.getByRole('button', { name: '一面 1', exact: true })).toBeVisible();
+  await expect(chips.getByRole('button', { name: '简历挂 1', exact: true })).toBeVisible();
+  await expect(chips.getByRole('button', { name: '一面挂 1', exact: true })).toBeVisible();
+  await expect(chips.getByRole('button', { name: '简历筛选 1' })).toHaveCount(0);
+
+  const rows = page.locator('tr.sheet__row');
+  await chips.getByRole('button', { name: '全部已挂 2', exact: true }).click();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.filter({ hasText: '丙公司' })).toHaveCount(0);
+
+  await chips.getByRole('button', { name: '一面挂 1', exact: true }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('乙公司');
+
+  // 结果 = 进行中 hides the failure chips altogether.
+  await chips.getByRole('button', { name: '一面挂 1', exact: true }).click();
+  await page.getByLabel('按结果筛选').selectOption('active');
+  await expect(chips.getByRole('button', { name: /挂/ })).toHaveCount(0);
+  await expect(rows).toHaveCount(1);
+});
