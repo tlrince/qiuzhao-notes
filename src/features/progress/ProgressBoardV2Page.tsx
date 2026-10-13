@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { projectProgressTable } from '../../domain/v2/table.js';
 import { Drawer, ConfirmDialog } from '../../shared/ui/Dialog.js';
@@ -217,9 +217,14 @@ export function ProgressBoardV2Page({ seasonId }: { seasonId: string | null }) {
       </section>
       <nav className="board-chips" aria-label="按状态筛选">
         <button type="button" className={`board-chip${statusKey === ALL ? ' board-chip--on' : ''}`} aria-pressed={statusKey === ALL} onClick={() => setStatusKey(ALL)}>全部 <b>{searched.length}</b></button>
-        {chips.map(chip => {
+        {chips.map((chip, index) => {
           const tone = quickStatusTone(chip.key, snapshot.definitions);
-          return <button type="button" key={chip.key} className={`board-chip${statusKey === chip.key ? ' board-chip--on' : ''}`} aria-pressed={statusKey === chip.key} style={{ '--c': tone.color } as CSSProperties} onClick={() => setStatusKey(statusKey === chip.key ? ALL : chip.key)}><span className="board-chip__dot" />{chip.label} <b>{chip.count}</b></button>;
+          // Failures sit after the stages they left, set apart by a divider.
+          const firstFailed = chip.failed && !chips[index - 1]?.failed;
+          return <Fragment key={chip.key}>
+            {firstFailed && index > 0 && <span className="board-chips__divider" aria-hidden="true" />}
+            <button type="button" className={`board-chip${chip.failed ? ' board-chip--failed' : ''}${statusKey === chip.key ? ' board-chip--on' : ''}`} aria-pressed={statusKey === chip.key} style={{ '--c': tone.color } as CSSProperties} onClick={() => setStatusKey(statusKey === chip.key ? ALL : chip.key)}><span className="board-chip__dot" />{chip.label} <b>{chip.count}</b></button>
+          </Fragment>;
         })}
       </nav>
       <ApplicationSheet

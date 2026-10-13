@@ -20,6 +20,10 @@
 .board-chip:hover { border-color: #d5cbb8; color: #26211a; }
 .board-chip--on { border-color: #0f766e; background: #0f766e; color: #fff; }
 .board-chip--on b { opacity: .7; }
+.board-chips__divider { flex: none; align-self: center; width: 1px; height: 18px; margin: 0 2px; background: #e0d8c8; }
+.board-chip--failed { border-color: #f1d3cf; background: #fff8f7; color: #b42318; }
+.board-chip--failed:hover { border-color: #e4aaa3; color: #b42318; }
+.board-chip--failed.board-chip--on { border-color: #b42318; background: #b42318; color: #fff; }
 .board-chip__dot { width: 7px; height: 7px; flex: none; border-radius: 99px; background: var(--c, #a8a29e); }
 
 @media (max-width: 1280px) { .board-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
